@@ -1,6 +1,23 @@
-# Source: research/india/timeline.md. Verify against the official gazette before release.
+# Effective Dates Configuration
+# Source: research/india/timeline.md and research/india/verification-report-2026-10-29.md.
+# Verify against the official gazette before release.
+#
+# Note on 13 vs 14 November 2025:
+# Official e-Gazette metadata shows 14 Nov 2025 as the upload/digital signature date:
+# - DPDP Rules (G.S.R. 846(E), file 01): CG-DL-E-14112025-267650, signed 14 Nov 2025, 10:43:53 IST.
+# - Commencement (G.S.R. 843(E), file 03): CG-DL-E-14112025-267647, signed 14 Nov 2025, 10:37:23 IST.
+# Issue headers and datelines state 13 Nov 2025. That the 14th represents upload lag is an inference;
+# the legal date of publication remains an open question for legal counsel (open-questions.md Q1;
+# possible one-day variance).
+
 dpdp:
-  stage_1: 2025-11-13   # Board machinery etc.
-  stage_2: 2026-11-13   # Consent Manager registration
-  stage_3: 2027-05-13   # developer-facing duties
-  note: "Some sources use the 14th; possible one-day variance (open-questions Q1)."
+  stage_1: 2025-11-13   # Publication date: Board machinery, powers, penalties, definitions
+  stage_2: 2026-11-13   # 1 year from publication: Consent Manager registration (r.4; s.6(9))
+  stage_3: 2027-05-13   # 18 months from publication: Developer-facing duties (notice, consent, rights, children, security, transfer, retention)
+
+spdi:
+  in_force: 2011-04-11      # IT (Reasonable Security Practices and Procedures and Sensitive Personal Data or Information) Rules, 2011 (G.S.R. 313(E))
+  s43a_omitted: 2027-05-13  # Section 43A of the IT Act omitted under DPDP Act s.44(2)
+
+certin:
+  in_force: 2022-06-27      # CERT-In Directions under Section 70B (No. 20(3)/2022-CERT-In; MSME extension 2022-09-25)

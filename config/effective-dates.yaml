@@ -1,0 +1,6 @@
+# Source: research/india/timeline.md. Verify against the official gazette before release.
+dpdp:
+  stage_1: 2025-11-13   # Board machinery etc.
+  stage_2: 2026-11-13   # Consent Manager registration
+  stage_3: 2027-05-13   # developer-facing duties
+  note: "Some sources use the 14th; possible one-day variance (open-questions Q1)."

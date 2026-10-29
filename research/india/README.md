@@ -10,13 +10,13 @@ Prepared 2026-10-29 for the open-source "privacy ship-check" skill. **Research o
 | `timeline.md` | Commencement dates, what applies in each phase |
 | `checks.md` | 25 candidate checks (19 DPDP, 6 related regimes), with top-5 / bottom-5 confidence |
 | `overlaps.md` | SPDI, CERT-In, e-commerce, RBI versus DPDP |
-| `open-questions.md` | 20 items for a lawyer |
+| `open-questions.md` | 24 items for a lawyer |
 
 ## Headline findings
 
-1. **Your staged dates need correcting.** The gazette dateline and the Act's own India Code footnote support **13 Nov 2025 / 13 Nov 2026 / 13 May 2027**, not 14. The 14 Nov date comes from PIB and law-firm articles. Treat 14 as a possible one-day variance (timeline.md, open-questions Q1).
+1. **Your staged dates need correcting.** The gazette dateline and the Act's own India Code footnote support **13 Nov 2025 / 13 Nov 2026 / 13 May 2027**, not 14. The 14 Nov date comes from the PIB backgrounder, law-firm articles, and the e-Gazette upload metadata (IDs and press signatures dated 14 Nov, files 01 and 03). Treat 14 as a possible one-day variance (timeline.md, open-questions Q1).
 2. **Almost nothing developer-facing applies yet.** Notice, consent, children, security, breach, erasure, rights and transfer duties start **13 May 2027**. On 13 Nov 2026 only Consent Manager registration (Rule 4; s.6(9)) starts. Until May 2027 the operative regimes are the SPDI Rules and s.43A, CERT-In Directions, and sector rules.
-3. **No shortened timeline has been notified.** MeitY floated 12 months for some entities in Jan 2026. Trackers checking up to mid-Oct 2026 found no amendment. Secondary only; re-check the Gazette before shipping. A **Removal of Difficulties Order (S.O. 5458(E), 5 Oct 2026)** reportedly made two wording fixes (s.9(1) and s.10(2)(c)(ii)) without changing dates (secondary only).
+3. **No shortened timeline has been notified.** MeitY floated 12 months for some entities in Jan 2026. Trackers checking up to mid-Oct 2026 found no amendment. Secondary only; re-check the Gazette before shipping. The **Removal of Difficulties Order (S.O. 5458(E), 5 Oct 2026)** has been read (official PDF, file 06): it makes two wording fixes (s.9(1) and s.10(2)(c)(ii)) without changing dates. The **corrigendum (G.S.R. 892(E))** has also been verified (official PDF, file 04): eight minor wording fixes, no date or substantive rule changed.
 4. **The law is silent on third-party requests.** Nothing in the Act or Rules addresses analytics, fonts, CDNs, embeds or cookies. The Google Fonts question rests on whether an IP address is "personal data" and whether a browser request is a "disclosure": unresolved (Q2). The skill should output an inventory, not a violation.
 5. **No cross-border restriction exists today.** s.16 is a negative list. No country, Rule 15 order or Rule 13(4) specification had been located as of Oct 2026 (secondary).
 6. **Children:** "child" means under 18, with no age band. Parental consent verification (Rule 10) and the ban on tracking and targeted ads (s.9(3)) are clear on their face but key terms are undefined (Q4, Q5).
@@ -24,10 +24,9 @@ Prepared 2026-10-29 for the open-source "privacy ship-check" skill. **Research o
 
 ## What I could not verify
 
-- **The official MeitY PDF of the Rules and the gazette copy of G.S.R. 843(E):** the fetch tool refused the official URLs. I read the full text on mirrors (dpdpa.com, dpdpa.in). The India Code Act text and its commencement footnote confirm the dates independently.
-- **The corrigendum G.S.R. 892(E):** unread. The Rules text I used is pre-corrigendum.
-- **The Removal of Difficulties Order S.O. 5458(E):** unread; secondary reports only. The India Code copy of the Act pre-dates it.
-- **CERT-In Directions and FAQs (cert-in.org.in):** not opened. IN-CERTIN checks rest on consistent law-firm summaries.
+- **India Code footnote:** not attached in official PDF file 02 (which is the original gazette).
+- **Hindi text layers:** Hindi Rules and Order text not compared; extracted Hindi text unreliable.
+- **Human read of PDF passages:** AI reading of official PDFs completed; human spot-checks of key passages pending.
 - **Consumer Protection (E-Commerce) Rules 2020:** official PDF not opened; text seen on mirrors.
 - **IT Act text (s.43A, s.70B, s.87), IT Intermediary Rules 2021:** not opened.
 - **RBI circular of 6 Apr 2018:** only the RBI FAQ extract seen.
@@ -51,7 +50,7 @@ Prepared 2026-10-29 for the open-source "privacy ship-check" skill. **Research o
 5. **Act s.16, s.17** and **Rules r.13, r.15**: transfers and exemptions.
 6. **Act s.44(2)** and **s.38**: how the IT Act changes and which law prevails.
 7. **SPDI Rules r.3-r.8** (P5): the regime in force now.
-8. **CERT-In Directions** (P9, once opened), then the **Removal of Difficulties Order** and the **corrigendum**.
+8. **CERT-In Directions and FAQ** (P9/P10, files 07, 07b, 07c), then the **Removal of Difficulties Order** (file 06) and the **corrigendum** (file 04).
 
 ## Recommendations for the skill (engineering, not legal)
 

@@ -14,11 +14,11 @@ Verified in P1: s.44(2) commences with the 18-month group. s.38 (DPDP prevails o
 
 ## 2. SPDI Rules 2011 versus DPDP
 
-The SPDI Rules were made under s.87(2)(ob) read with s.43A (P5 preamble). They bind a "body corporate" and mostly protect "sensitive personal data or information" (SPDI), a closed list in r.3.
+The SPDI Rules were made under s.87(2)(ob) read with s.43A (P5 preamble). They bind a "body corporate" and mostly protect "sensitive personal data or information" (SPDI), an enumerated list in r.3 (items (i)-(viii), including related details).
 
 | Topic | SPDI Rules (P5) | DPDP Act/Rules (P1, P3) | Practical difference |
 |---|---|---|---|
-| Who is covered | Body corporate (and persons acting for it) | Any "person" who decides purpose and means (s.2(i), s.2(s)), including individuals, firms, the State | DPDP is wider |
+| Who is covered | Body corporate (and persons acting for it). SPDI r.2(1)(c) and CERT-In FAQ Q25 both rely on the s.43A definition of 'body corporate'; s.43A is omitted from 13 May 2027 (Q23). | Any "person" who decides purpose and means (s.2(i), s.2(s)), including individuals, firms, the State | DPDP is wider |
 | What data | SPDI list (passwords, financial instruments, health, sexual orientation, medical records, biometrics) for consent and disclosure rules; "personal information" for the policy and security rules | All digital personal data (s.3(a)), no sensitivity tiers | DPDP removes the tiering |
 | Privacy policy / notice | r.4: published policy | s.5 and r.3: notice before or with each consent request, standalone, itemised, purposes, rights routes | DPDP notice is per request and more detailed |
 | Consent form | r.5(1): written consent by letter, fax or email, for SPDI | s.6(1): free, specific, informed, unconditional, unambiguous, clear affirmative action | DPDP is technology-neutral and stricter on quality |
@@ -27,21 +27,21 @@ The SPDI Rules were made under s.87(2)(ob) read with s.43A (P5 preamble). They b
 | Disclosure to third parties | r.6: prior permission for SPDI unless agreed in contract or legally required | Consent or legitimate use is the ground for any processing, which includes disclosure (s.2(x), s.4); processors only under contract (s.8(2)) | DPDP covers all disclosures |
 | Transfer abroad | r.7: for SPDI, to a body ensuring the same level of protection, and only if necessary for the contract or with consent | s.16: allowed unless the destination is notified as restricted; none notified | DPDP default is permissive. SPDI r.7 is stricter for SPDI while it lasts. |
 | Security | r.8: documented programme; ISO/IEC 27001 as a recognised standard; safe harbour with independent audit at least yearly | s.8(5), r.6: baseline measures; penalty up to INR 250 crore | DPDP has an explicit minimum list; no ISO safe harbour in the text I read |
-| Retention | r.5(4): no longer than needed | s.8(7), r.8: erase on withdrawal or purpose served; one-year minimum retention of data and logs for specified purposes | DPDP creates a retention floor as well as a ceiling (Q6) |
+| Retention | r.5(4): no longer than needed | s.8(7), r.8: erase on withdrawal or purpose served; one-year minimum retention of data and logs for specified purposes. r.8(3) says 'a Data Fiduciary'; the Third Schedule class limit is in r.8(1), not r.8(3) (Q6). | DPDP creates a retention floor as well as a ceiling (Q6) |
 | Breach notice | none (SPDI has no breach clause) | s.8(6), r.7: users and Board | New duty |
 | Remedy | s.43A: compensation for failure to protect (text not verified, P12) | Board penalties (Act Schedule); no compensation provision to the principal; civil court barred (s.39) | Different enforcement model |
 | Children | none | s.9, r.10-12 | New duty |
 
 ## 3. CERT-In Directions (28 Apr 2022) versus DPDP
 
-Source status: P9 not opened. Duties below come from consistent law-firm summaries and are NOT VERIFIED against the PDF.
+Source status: P9 opened (file 07), with the 27 Jun 2022 notice (07b) and the May 2022 FAQ (07c). Duties are verified against the Directions unless marked FAQ.
 
 | Topic | CERT-In (reported) | DPDP | Overlap note |
 |---|---|---|---|
 | Incident reporting | Report listed incidents to CERT-In within 6 hours of noticing | Users: without delay. Board: without delay, then detailed report within 72 hours (r.7) | Separate recipients and clocks. A single event can trigger both. Build one runbook with both timers. |
-| Logs | Enable logs of all ICT systems; keep 180 days within Indian jurisdiction | r.6(1)(e): keep logs and personal data one year for detecting unauthorised access; r.8(3): keep personal data, traffic data and logs at least one year | Take the longer period (one year) while DPDP applies. The location requirement comes from CERT-In only. |
+| Logs | Enable logs of all ICT systems; keep 180 days within Indian jurisdiction. FAQ Q35 allows storage abroad if produced to CERT-In in reasonable time; FAQ Q36 uses 'Indian jurisdiction' for financial-transaction logs. Keep the two answers distinct. | r.6(1)(e): keep logs and personal data one year for detecting unauthorised access; r.8(3): keep personal data, traffic data and logs at least one year | Take the longer period (one year) while DPDP applies. The location requirement comes from CERT-In only. |
 | Clocks | NTP sync to NIC/NPL | none | CERT-In only |
-| Point of contact | Designate one | r.9: published contact for data questions | Different purposes; the same person may serve both |
+| Point of contact | Designate one and email details to CERT-In in the Annexure II format | r.9: published contact for data questions | Different purposes; the same person may serve both |
 | Scope | Service providers, intermediaries, data centres, body corporates, government organisations | Data Fiduciaries | CERT-In covers non-personal-data incidents too |
 | Enforcement | s.70B(7) IT Act | Board penalties | Separate |
 

@@ -3,11 +3,11 @@
 Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not legal advice. A passing check never means "compliant."**
 
 **Conventions**
-- "Act" = P1. "Rules" = P3 (pre-corrigendum text, mirror). "SPDI" = P5.
+- "Act" = P1. "Rules" = P3 (pre-corrigendum text, official gazette PDF file 01; the corrigendum changes no substantive rule). "SPDI" = P5.
 - `applies_from` for DPDP checks: **13 May 2027** (see timeline.md; 14 May if publication is read as 14 Nov 2025).
 - `confidence` = how sure I am that (a) the check traces to a real provision and (b) the pass criterion is objective enough to automate. It is not a view on the legal merits.
 - Labels: **LAW** = the provision says this. **BEST PRACTICE** = engineering inference, not a legal requirement.
-- Official PDF URLs: Act https://www.indiacode.nic.in/bitstream/123456789/22037/2/a2023-22.pdf ; Rules https://www.meity.gov.in/static/uploads/2025/11/53450e6e5dc0bfa85ebd78686cadad39.pdf (not opened; read via mirror).
+- Official PDF URLs: Act https://www.indiacode.nic.in/bitstream/123456789/22037/2/a2023-22.pdf ; Rules https://www.meity.gov.in/static/uploads/2025/11/53450e6e5dc0bfa85ebd78686cadad39.pdf (opened: official gazette PDF, file 01; pre-corrigendum text)
 
 ---
 
@@ -85,7 +85,7 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 - **source:** Act s.8(9); s.6(3); Rules r.9.
 - **applies_from:** 13 May 2027
 - **detection:** automated. Crawl footer and privacy/notice pages for a named role or contact (email, phone, form). Assisted for the "every response" part (check auto-reply templates).
-- **pass_criteria:** A contact for data questions is visible from the home page or app settings in at most two clicks; consent screens link to it.
+- **pass_criteria:** BEST PRACTICE (not in r.9, which says 'prominently'): visible from the home page or app settings in at most two clicks. LAW (Act s.6(3), r.9): consent requests contain or link to the contact details.
 - **exemptions_or_caveats:** DPO is mandatory only for notified Significant Data Fiduciaries (s.10(2)(a)); everyone else needs only a responsible person. "Prominently" is a judgment word.
 - **confidence:** high.
 
@@ -112,12 +112,12 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 ## Group 3: Children
 
 ### IN-DPDP-011
-- **obligation (LAW):** Before processing any personal data of a child (under 18) or of a person with disability who has a lawful guardian, obtain verifiable consent of the parent or guardian. The fiduciary exercises due diligence that the parent is an identifiable adult, by reference to identity and age details it already holds reliably, or details voluntarily provided directly or via a virtual token from an authorised entity (including a Digital Locker service provider).
+- **obligation (LAW):** Before processing any personal data of a child (under 18) or of a person with disability who has a lawful guardian, obtain verifiable consent of the parent or guardian. The fiduciary exercises due diligence that the parent is an adult who is identifiable if required in connection with compliance with any law for the time being in force in India (r.10(1); confirmed, verification-report section 11), by reference to identity and age details it already holds reliably, or details voluntarily provided directly or via a virtual token from an authorised entity (including a Digital Locker service provider).
 - **source:** Act s.2(f), s.9(1); Rules r.10, r.11, r.12; Fourth Schedule.
 - **applies_from:** 13 May 2027
 - **detection:** assisted. Grep signup code for date-of-birth or age fields and "I am over 18" toggles; look for a parental-consent branch; flag any child-directed category (education, games, kids) by manifest or content signals; human decides whether children are likely users.
 - **pass_criteria:** Where children may use the service: an age signal exists before data collection; a parental consent step with adult verification (Rule 10 routes) is triggered for under-18s; no account is created or data stored before that step completes.
-- **exemptions_or_caveats:** The Fourth Schedule exempts certain classes (clinical establishments, health professionals, educational institutions for limited tracking, child-transport for location) and certain purposes (e.g. email-only account creation, real-time safety location, age-confirmation processing) from s.9(1) and s.9(3) only. s.9(2) is not exempted. No age-based exemption under s.9(5) was found. The Oct 2026 Removal of Difficulties Order reportedly adds "of" in s.9(1) (P8, unverified).
+- **exemptions_or_caveats:** The Fourth Schedule exempts certain classes (clinical establishments, health professionals, educational institutions for limited tracking, child-transport for location) and certain purposes (e.g. email-only account creation, real-time safety location, age-confirmation processing) from s.9(1) and s.9(3) only. s.9(2) is not exempted. No age-based exemption under s.9(5) was found. S.O. 5458(E) (file 06; second cross-check on excerpt) inserts "of" in the English text of s.9(1). A possible Hindi/English wording difference is unverified (Q21; unverified by a Hindi reader, extracted Hindi text unreliable). r.11 requires the guardian to be appointed by a court, designated authority or local level committee; Fourth Sch Part A also covers crèche and day-care individuals.
 - **confidence:** medium for locating age signals; low for deciding sufficiency of verification.
 
 ### IN-DPDP-012
@@ -161,7 +161,7 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 - **confidence:** medium. The law is clear; compliance is an organisational capability, not a code property.
 
 ### IN-DPDP-016
-- **obligation (LAW):** Erase personal data when consent is withdrawn or when it is reasonable to assume the purpose is no longer served, unless law requires retention. For specified classes, the purpose is deemed no longer served after a stated period of inactivity (three years for e-commerce with at least 2 crore registered users, online gaming intermediaries with at least 50 lakh, social media intermediaries with at least 2 crore), with notice at least 48 hours before erasure. Separately, such fiduciaries must retain the data, traffic data and logs for at least one year for Seventh Schedule purposes.
+- **obligation (LAW):** Erase personal data when consent is withdrawn or when it is reasonable to assume the purpose is no longer served, unless law requires retention. For specified classes, the purpose is deemed no longer served after a stated period of inactivity (three years for e-commerce with at least 2 crore registered users, online gaming intermediaries with at least 50 lakh, social media intermediaries with at least 2 crore), with notice at least 48 hours before erasure. Separately, r.8(3) says "a Data Fiduciary" (the Third Schedule class limit is in r.8(1), not r.8(3)) must retain the data, traffic data and logs for at least one year for Seventh Schedule purposes (scope unresolved, Q6; r.8(3) wording confirmed, verification-report section 11).
 - **source:** Act s.8(7)-(8), s.12(3); Rules r.8(1)-(3); Third Schedule; Seventh Schedule.
 - **applies_from:** 13 May 2027
 - **detection:** assisted. Find account-deletion flows, deletion endpoints and TTL/retention jobs; check that deletion also reaches backups, analytics and processors; for large-scale classes, look for a 48-hour pre-erasure notification job.
@@ -186,7 +186,7 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 
 ### IN-DPDP-018
 - **obligation (LAW):** Transfers abroad are permitted by default; the Government can restrict transfer for processing to specific countries by notification (s.16(1)). A stricter sectoral law still applies (s.16(2)). Significant Data Fiduciaries may be required to keep specified data and its traffic data in India (r.13(4)). Rule 15 conditions transfers on meeting requirements the Government may specify by order for making data available to a foreign State or its controlled entities.
-- **source:** Act s.16; Rules r.13(4), r.13(5), r.15.
+- **source:** Act s.16; Rules r.13(4), r.15 (r.13(5) only defines "committee").
 - **applies_from:** 13 May 2027
 - **detection:** automated inventory. Resolve hosting regions and third-party endpoints to countries; compare with a maintained list of restricted countries, loaded from config.
 - **pass_criteria:** No data flows to a country on the notified list. The list is currently **empty**: no s.16 notification, no r.15 order, no r.13(4) specification was found as of Oct 2026 (secondary sources; official gazette not searched).
@@ -199,7 +199,7 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 - **applies_from:** 13 May 2027 (and only if notified)
 - **detection:** human-judgment. Ask whether the organisation has been notified; if yes, check for the artefacts.
 - **pass_criteria:** Not applicable unless notified; no notification was found.
-- **exemptions_or_caveats:** s.10(2)(c)(ii) is reportedly reworded to "data audit" by the Oct 2026 Order (P8, unverified). s.17(3) allows exemption of s.10 for classes (none found).
+- **exemptions_or_caveats:** s.10(2)(c)(ii) reads "data audit" under S.O. 5458(E) (file 06; second cross-check on excerpt). r.13(1) still says "audit" and is unamended. s.17(3) allows exemption of s.10 for classes (none found).
 - **confidence:** low as a check; the skill should present it as informational.
 
 ---
@@ -208,7 +208,7 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 
 ### IN-SPDI-001
 - **obligation (LAW):** A body corporate handling personal information or sensitive personal data must publish a privacy policy covering practices, data types, purpose, disclosure and security; and designate a Grievance Officer with name and contact published on its website, redressing grievances within one month.
-- **source:** SPDI Rules r.4, r.5(9) (P5, via mirror).
+- **source:** SPDI Rules r.4, r.5(9) (P5, official gazette PDF file 05).
 - **applies_from:** In force now; ceases to be the primary regime when s.44(2) commences on 13 May 2027 (subject to Q8).
 - **detection:** automated. Find a privacy policy link; find a named Grievance Officer and contact; check policy sections against r.4(i)-(v).
 - **pass_criteria:** A published policy with the five elements; a named officer with contact details.
@@ -226,16 +226,16 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 
 ### IN-CERTIN-001
 - **obligation (reported):** Synchronise ICT clocks with NIC or NPL NTP servers (or servers traceable to them); enable logs of all ICT systems and keep them securely for a rolling 180 days within Indian jurisdiction, ready to give to CERT-In.
-- **source:** CERT-In Directions of 28 Apr 2022, No. 20(3)/2022-CERT-In (P9, **NOT OPENED**; summarised consistently by several law firms).
-- **applies_from:** In force (effective 27 Jun 2022 per secondary sources; MSME extension reported)
+- **source:** CERT-In Directions of 28 Apr 2022, No. 20(3)/2022-CERT-In (P9 opened, file 07; extension notice 07b; FAQ 07c).
+- **applies_from:** In force. Effective 27 Jun 2022 per the Directions; 25 Sep 2022 for MSMEs per the 27 Jun 2022 notice.
 - **detection:** assisted. Inspect server/IaC config for NTP sources; log retention settings; log storage region.
-- **pass_criteria:** NTP source is NIC/NPL or traceable; log retention at least 180 days; logs stored in India.
+- **pass_criteria:** NTP source is NIC/NPL or traceable; logs of all ICT systems retained 180 days rolling and producible to CERT-In. India-hosted storage is the conservative reading; FAQ Q35 allows storage abroad if produced in reasonable time; FAQ Q36 uses 'Indian jurisdiction' for financial-transaction logs (the two answers stay distinct); the FAQ is non-binding. Report storage location as information only.
 - **exemptions_or_caveats:** Whether "within Indian jurisdiction" requires India-hosted storage is contested (Q18).
-- **confidence:** low-medium. Primary text unread.
+- **confidence:** medium. Primary text read; storage-location scope unresolved.
 
 ### IN-CERTIN-002
 - **obligation (reported):** Report listed cyber incidents to CERT-In within 6 hours of noticing them (including unauthorised access to IT systems or data), and designate a point of contact.
-- **source:** CERT-In Directions (P9, NOT OPENED). Report channel (email, phone) reported in a government-portal extract.
+- **source:** CERT-In Directions (P9, opened, file 07, directions (ii)-(iii), Annexures I-II). 20 incident categories. Point-of-contact details must be emailed to CERT-In in the Annexure II format.
 - **applies_from:** In force.
 - **detection:** human-judgment. Check for an incident response plan with a 6-hour CERT-In step and a named contact.
 - **pass_criteria:** Written plan; named contact; contact route saved.
@@ -276,4 +276,4 @@ Retrieved 2026-10-29. Source IDs refer to `sources.md`. **Research notes, not le
 2. **IN-DPDP-012**: child tracking and ads. Key terms undefined.
 3. **IN-DPDP-011**: sufficiency of verifiable parental consent for small developers.
 4. **IN-DPDP-003**: language option. Ambiguous pass criterion.
-5. **IN-CERTIN-001**: primary text unread; "within Indian jurisdiction" unsettled.
+5. **IN-CERTIN-001**: primary text now read; storage-location scope unsettled.

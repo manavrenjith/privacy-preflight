@@ -1,0 +1,68 @@
+[
+  {
+    "check_id": "IN-SPDI-001",
+    "result": "found",
+    "evidence": [
+      "src/pages/PrivacyPolicy.tsx:15",
+      "https://example.com/privacy-policy"
+    ],
+    "suggested_fix": "Maintain named Grievance Officer and contact details up to date.",
+    "notes": "Policy contains the required five sections and named officer."
+  },
+  {
+    "check_id": "IN-DPDP-002",
+    "result": "found",
+    "evidence": [
+      "src/components/SignupModal.tsx:48",
+      "https://example.com/notice"
+    ],
+    "notes": "Notice provides links and described routes for withdrawal, rights, and complaints."
+  },
+  {
+    "check_id": "IN-DPDP-004",
+    "result": "not-found",
+    "evidence": [
+      "src/components/SignupForm.tsx:102"
+    ],
+    "suggested_fix": "Uncheck default consent checkboxes and provide separate toggles per purpose.",
+    "notes": "Found pre-ticked consent toggle covering marketing and analytics."
+  },
+  {
+    "check_id": "IN-DPDP-008",
+    "result": "found",
+    "evidence": [
+      "src/components/Footer.tsx:24",
+      "https://example.com/contact"
+    ],
+    "notes": "Data inquiry contact details are prominently published in website footer."
+  },
+  {
+    "check_id": "IN-BP-004",
+    "result": "informational",
+    "evidence": [
+      "fonts.googleapis.com (US)",
+      "cdn.segment.com (US)",
+      "api.mixpanel.com (US)"
+    ],
+    "notes": "Third-party network call inventory. Legal status unclear (open-questions.md Q2)."
+  },
+  {
+    "check_id": "IN-BP-001",
+    "result": "found",
+    "evidence": [
+      "public/fonts/inter-var.woff2",
+      "public/vendor/bootstrap.bundle.min.js"
+    ],
+    "notes": "Web fonts and vendor scripts are self-hosted."
+  },
+  {
+    "check_id": "IN-DPDP-011",
+    "result": "needs-human",
+    "evidence": [
+      "src/auth/ageGate.ts:35"
+    ],
+    "suggested_fix": "Legal reviewer should verify whether age gate satisfies verifiable parental consent due diligence.",
+    "notes": "Age gate prompt exists; sufficiency of parental verification requires legal review."
+  }
+]
+

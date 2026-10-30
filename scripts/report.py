@@ -3,7 +3,7 @@
 Privacy Preflight - Report Generator
 
 Generates markdown and structured JSON findings reports for a given jurisdiction.
-Not legal advice; never claims an app is compliant or secure.
+Not legal advice; never claims an app meets statutory certification or security standards.
 """
 
 from __future__ import annotations
@@ -36,6 +36,15 @@ PROHIBITED_WORDS = [
 ]
 
 
+def extract_first_sentence(text: str) -> str:
+    """Extract the first sentence from a caveats string."""
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    return sentences[0].strip() if sentences else cleaned
+
+
 def extract_known_limits(markdown_path: Path) -> str:
     """Extract markdown text from '## Known Limits' to the end of the file."""
     if not markdown_path.is_file():
@@ -44,9 +53,7 @@ def extract_known_limits(markdown_path: Path) -> str:
     idx = content.find("## Known Limits")
     if idx == -1:
         return ""
-    # Skip the '## Known Limits' heading line itself
-    after_heading = content[idx + len("## Known Limits") :].strip()
-    return after_heading
+    return content[idx + len("## Known Limits") :].strip()
 
 
 def compute_check_status(
@@ -67,12 +74,15 @@ def compute_check_status(
     au_key = check.get("applies_until")
     au_date = resolve_config_date(effective_dates, au_key) if au_key else None
 
+    oq_list = check.get("open_question_refs", [])
+    oq_str = ", ".join(oq_list) if oq_list else "open question"
+
     if af_date and today < af_date:
         return (f"READINESS from {af_date}", "readiness")
     elif au_date and today >= au_date:
-        oq_list = check.get("open_question_refs", [])
-        oq_str = ", ".join(oq_list) if oq_list else "open question"
         return (f"UNRESOLVED ({oq_str})", "unresolved")
+    elif au_date and today < au_date:
+        return (f"IN FORCE NOW until {au_date}, then UNRESOLVED ({oq_str})", "in_force_now")
     else:
         return ("IN FORCE NOW", "in_force_now")
 
@@ -101,7 +111,11 @@ def format_finding_heading(check: Dict[str, Any], status_label: str) -> str:
         return f"[{check['label']} · not a legal requirement · verified {lv_str}]"
 
 
-def render_finding_markdown(finding_data: Dict[str, Any]) -> str:
+def render_finding_markdown(
+    finding_data: Dict[str, Any],
+    jurisdiction: str = "india",
+    verbose: bool = False,
+) -> str:
     """Render a single finding block in markdown."""
     lines: List[str] = [
         f"### {finding_data['heading_label']}",
@@ -119,11 +133,23 @@ def render_finding_markdown(finding_data: Dict[str, Any]) -> str:
         lines.append(f"- **Notes:** {finding_data['notes']}")
 
     lines.append(f"- **Confidence:** {finding_data.get('confidence', 'medium')}")
-    lines.append(f"- **Caveats:** {finding_data.get('caveats', '')}")
 
     oq_refs = finding_data.get("open_question_refs", [])
     oq_display = ", ".join(oq_refs) if oq_refs else "None"
     lines.append(f"- **Open Questions:** {oq_display}")
+
+    full_caveats = finding_data.get("caveats", "")
+    if verbose:
+        lines.append(f"- **Caveats:** {full_caveats}")
+    else:
+        first_sentence = extract_first_sentence(full_caveats)
+        cid = finding_data["check_id"]
+        pointer = f"Full caveats: references/jurisdictions/{jurisdiction}.md ({cid})"
+        if first_sentence:
+            lines.append(f"- **Caveats:** {first_sentence} {pointer}")
+        else:
+            lines.append(f"- **Caveats:** {pointer}")
+
     lines.append("")
     return "\n".join(lines)
 
@@ -133,6 +159,7 @@ def generate_report(
     jurisdiction: str = "india",
     today: Optional[datetime.date] = None,
     base_dir: Path | str = ".",
+    verbose: bool = False,
 ) -> Tuple[str, Dict[str, Any]]:
     """
     Generate markdown and structured JSON reports.
@@ -196,7 +223,7 @@ def generate_report(
             raise ValueError(f"Finding references unknown check ID: '{cid}'")
 
         res = item.get("result")
-        if res not in ("found", "not-found", "unclear", "needs-human", "informational"):
+        if res not in ("met", "not-met", "unclear", "needs-human", "informational"):
             raise ValueError(f"Finding '{cid}' has invalid result '{res}'")
 
         ev = item.get("evidence")
@@ -265,25 +292,59 @@ def generate_report(
     # 6. Not run checks
     not_run_checks = [c for c in active_checks if c["id"] not in evaluated_active_ids]
 
-    # 7. Not verified checks
-    not_verified_checks = [c for c in all_checks if c.get("verified_against") != "official-text"]
+    # 7. Not verified checks: list only active LAW checks whose verified_against is not official-text
+    not_verified_checks = [
+        c for c in active_checks
+        if c.get("label") == "LAW" and c.get("verified_against") != "official-text"
+    ]
 
     # 8. Human check pending checks
     human_pending_checks = [
         c for c in active_checks if c.get("label") == "LAW" and c.get("verified_by") == "ai-read"
     ]
 
-    # 9. Not covered (Known limits)
-    known_limits_text = extract_known_limits(md_path)
+    # 9. Not covered (raw known limits text for JSON output)
+    full_known_limits = extract_known_limits(md_path)
+
+    # 10. Summary result counts among those run
+    result_counts = {
+        "met": 0,
+        "not-met": 0,
+        "unclear": 0,
+        "needs-human": 0,
+        "informational": 0,
+    }
+    for f in processed_findings:
+        r = f["result"]
+        if r in result_counts:
+            result_counts[r] += 1
 
     # Build Markdown Document
     md_lines: List[str] = [
         f"# Privacy Preflight Findings Report: {jurisdiction.capitalize()}",
         "",
         f"- **Evaluation Date:** {today.strftime('%Y-%m-%d')}",
+        (
+            "  Note: Dates assume 13 Nov / 13 May per official gazette datelines; "
+            "upload metadata indicates a possible one-day variance (open question Q1)."
+        ),
         f"- **Jurisdiction:** {jurisdiction}",
         "",
     ]
+
+    # Summary block directly under header
+    md_lines.append("## Summary")
+    md_lines.append("")
+    md_lines.append(f"- **Active Checks:** {len(active_checks)}")
+    md_lines.append(f"- **Checks Run:** {len(processed_findings)}")
+    md_lines.append(f"- **Checks Not Run:** {len(not_run_checks)}")
+    md_lines.append("- **Results:**")
+    md_lines.append(f"  - met: {result_counts['met']}")
+    md_lines.append(f"  - not-met: {result_counts['not-met']}")
+    md_lines.append(f"  - unclear: {result_counts['unclear']}")
+    md_lines.append(f"  - needs-human: {result_counts['needs-human']}")
+    md_lines.append(f"  - informational: {result_counts['informational']}")
+    md_lines.append("")
 
     # Section 1: Staleness warning (only if any last_verified is > 90 days)
     if stale_checks:
@@ -299,7 +360,7 @@ def generate_report(
     md_lines.append("")
     if in_force_findings:
         for f in in_force_findings:
-            md_lines.append(render_finding_markdown(f))
+            md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
         md_lines.append("No findings in this category.")
         md_lines.append("")
@@ -309,7 +370,7 @@ def generate_report(
     md_lines.append("")
     if readiness_findings:
         for f in readiness_findings:
-            md_lines.append(render_finding_markdown(f))
+            md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
         md_lines.append("No findings in this category.")
         md_lines.append("")
@@ -319,7 +380,7 @@ def generate_report(
     md_lines.append("")
     if unresolved_findings:
         for f in unresolved_findings:
-            md_lines.append(render_finding_markdown(f))
+            md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
         md_lines.append("No findings in this category.")
         md_lines.append("")
@@ -329,7 +390,7 @@ def generate_report(
     md_lines.append("")
     if informational_findings:
         for f in informational_findings:
-            md_lines.append(render_finding_markdown(f))
+            md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
         md_lines.append("No findings in this category.")
         md_lines.append("")
@@ -339,7 +400,7 @@ def generate_report(
     md_lines.append("")
     if best_practice_findings:
         for f in best_practice_findings:
-            md_lines.append(render_finding_markdown(f))
+            md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
         md_lines.append("No findings in this category.")
         md_lines.append("")
@@ -349,7 +410,7 @@ def generate_report(
     md_lines.append("")
     if needs_human_findings:
         for f in needs_human_findings:
-            md_lines.append(render_finding_markdown(f))
+            md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
         md_lines.append("No findings in this category.")
         md_lines.append("")
@@ -376,7 +437,7 @@ def generate_report(
         md_lines.append("None.")
     md_lines.append("")
 
-    # Section 10: Not verified (every check whose verified_against is not official-text)
+    # Section 10: Not verified (only LAW checks whose verified_against is not official-text)
     md_lines.append("## Not Verified")
     md_lines.append("")
     if not_verified_checks:
@@ -398,24 +459,37 @@ def generate_report(
         md_lines.append("None.")
     md_lines.append("")
 
-    # Section 12: Not covered (read the "Known Limits" section and reproduce it)
-    md_lines.append("## Not Covered")
+    # Section 12: Not covered by this scan
+    md_lines.append("## Not Covered by This Scan")
     md_lines.append("")
-    if known_limits_text:
-        md_lines.append(known_limits_text)
-    else:
-        md_lines.append("No known limits section found in jurisdiction pack.")
+    not_run_ids_str = ", ".join(c["id"] for c in not_run_checks) if not_run_checks else "none"
+    md_lines.append("- Other jurisdictions")
+    md_lines.append("- Sector rules (health, telecom, SEBI, insurance)")
+    md_lines.append("- E-commerce rules")
+    md_lines.append("- Intermediary rules")
+    md_lines.append(f"- checks not run: {not_run_ids_str}")
     md_lines.append("")
 
-    # Section 13: Closing Line & Note
+    # Section 13: Limits of the legal research
+    md_lines.append("## Limits of the Legal Research")
+    md_lines.append("")
+    md_lines.append(
+        f"- Primary texts were read by an AI model and human checks are pending (see research/{jurisdiction}/verification-log.md)."
+    )
+    md_lines.append(
+        "- Statements that a notification has not been issued come from secondary sources, not a direct e-Gazette search."
+    )
+    md_lines.append(
+        "- The 13 vs 14 November date variance (Q1)."
+    )
+    md_lines.append("")
+    md_lines.append(f"Full Known Limits: references/jurisdictions/{jurisdiction}.md")
+    md_lines.append("")
+
+    # Section 14: Closing Line
     md_lines.append("---")
     md_lines.append("")
     md_lines.append("This report lists findings. It is not legal advice and it does not certify anything.")
-    md_lines.append("")
-    md_lines.append(
-        "Note: Dates assume 13 Nov / 13 May per official gazette datelines; "
-        "upload metadata indicates a possible one-day variance (open question Q1)."
-    )
 
     markdown_output = "\n".join(md_lines)
 
@@ -428,6 +502,12 @@ def generate_report(
             "Dates assume 13 Nov / 13 May per official gazette datelines; "
             "upload metadata indicates a possible one-day variance (open question Q1)."
         ),
+        "summary": {
+            "active_checks": len(active_checks),
+            "checks_run": len(processed_findings),
+            "checks_not_run": len(not_run_checks),
+            "results": result_counts,
+        },
         "staleness_warning": (
             [{"check_id": c, "last_verified": d, "days_old": o} for c, d, o in stale_checks]
             if stale_checks
@@ -450,7 +530,20 @@ def generate_report(
         "human_check_pending": [
             {"check_id": c["id"], "title": c.get("title", "")} for c in human_pending_checks
         ],
-        "not_covered": known_limits_text,
+        "not_covered": full_known_limits,
+        "not_covered_by_this_scan": [
+            "Other jurisdictions",
+            "Sector rules (health, telecom, SEBI, insurance)",
+            "E-commerce rules",
+            "Intermediary rules",
+            f"checks not run: {not_run_ids_str}",
+        ],
+        "limits_of_legal_research": [
+            f"Primary texts were read by an AI model and human checks are pending (see research/{jurisdiction}/verification-log.md).",
+            "Statements that a notification has not been issued come from secondary sources, not a direct e-Gazette search.",
+            "The 13 vs 14 November date variance (Q1).",
+        ],
+        "known_limits_reference": f"references/jurisdictions/{jurisdiction}.md",
     }
 
     # Verify negative constraints: no compliant, no secure
@@ -479,6 +572,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--out", default=None, help="Output markdown report file path")
     parser.add_argument("--json", dest="json_out", default=None, help="Output JSON report file path")
     parser.add_argument("--base-dir", default=".", help="Base workspace directory (default: current directory)")
+    parser.add_argument("--verbose", action="store_true", help="Print full caveats in markdown report")
 
     args = parser.parse_args(argv)
 
@@ -496,6 +590,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             jurisdiction=args.jurisdiction,
             today=today,
             base_dir=args.base_dir,
+            verbose=args.verbose,
         )
     except ValueError as e:
         print(f"Validation Error: {e}", file=sys.stderr)

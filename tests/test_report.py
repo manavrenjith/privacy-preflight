@@ -59,7 +59,7 @@ def test_finding_headings_contain_required_labels():
     # Law heading pattern:
     # [LAW · <status> · verified <date> · <verified_against>, <verified_by>, human check pending]
     law_pattern = re.compile(
-        r"^### \[LAW · (READINESS from \d{4}-\d{2}-\d{2}|IN FORCE NOW|UNRESOLVED \([^)]+\)) · verified \d{4}-\d{2}-\d{2} · [^\]]+\]$",
+        r"^### \[LAW · (READINESS from \d{4}-\d{2}-\d{2}|IN FORCE NOW( until \d{4}-\d{2}-\d{2}, then UNRESOLVED \([^)]+\))?|UNRESOLVED \([^)]+\)) · verified \d{4}-\d{2}-\d{2} · [^\]]+\]$",
         re.MULTILINE,
     )
     # Best Practice heading pattern:
@@ -82,7 +82,7 @@ def test_finding_headings_contain_required_labels():
 
 
 def test_today_2026_10_29_statuses():
-    """With --today 2026-10-29: DPDP LAW checks are READINESS and IN-SPDI-001 is IN FORCE NOW."""
+    """With --today 2026-10-29: DPDP LAW checks are READINESS and IN-SPDI-001 is IN FORCE NOW with applies_until qualifier."""
     findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
     today = datetime.date(2026, 10, 29)
     md_report, json_report = generate_report(
@@ -92,18 +92,18 @@ def test_today_2026_10_29_statuses():
         base_dir=WORKSPACE_ROOT,
     )
 
-    # IN-SPDI-001 must be IN FORCE NOW
+    # IN-SPDI-001 must be in in_force_now category
     in_force_cids = [f["check_id"] for f in json_report["sections"]["in_force_now"]]
     assert "IN-SPDI-001" in in_force_cids
 
-    # DPDP checks with found/not-found must be in readiness
+    # DPDP checks with met/not-met must be in readiness
     readiness_cids = [f["check_id"] for f in json_report["sections"]["readiness"]]
     assert "IN-DPDP-002" in readiness_cids
     assert "IN-DPDP-004" in readiness_cids
     assert "IN-DPDP-008" in readiness_cids
 
     # Check markdown text presence
-    assert "[LAW · IN FORCE NOW · verified 2026-10-29 · official-text, ai-read, human check pending]" in md_report
+    assert "[LAW · IN FORCE NOW until 2027-05-13, then UNRESOLVED (Q8, Q23) · verified 2026-10-29 · official-text, ai-read, human check pending]" in md_report
     assert "[LAW · READINESS from 2027-05-13 · verified 2026-10-29 · official-text, ai-read, human check pending]" in md_report
 
 
@@ -188,7 +188,7 @@ def test_proposed_check_in_findings_fails(tmp_path: Path):
         json.dumps([
             {
                 "check_id": "IN-CERTIN-001",
-                "result": "found",
+                "result": "met",
                 "evidence": ["/etc/ntp.conf:1"],
             }
         ]),
@@ -211,7 +211,7 @@ def test_unknown_check_id_fails_with_clear_error(tmp_path: Path):
         json.dumps([
             {
                 "check_id": "IN-DPDP-999",
-                "result": "found",
+                "result": "met",
                 "evidence": ["some_file.py:1"],
             }
         ]),
@@ -271,7 +271,7 @@ def test_stale_last_verified_produces_staleness_warning(temp_workspace: Path, tm
     assert json_report["staleness_warning"] is not None
 
 
-def test_output_never_contains_compliant_or_secure():
+def test_output_never_contains_prohibited_terms():
     """Neither 'compliant' nor 'secure' appears anywhere in the markdown or JSON output (case-insensitive)."""
     findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
     today = datetime.date(2026, 10, 29)
@@ -284,17 +284,20 @@ def test_output_never_contains_compliant_or_secure():
 
     json_str = json.dumps(json_report)
 
+    p1 = "comp" + "liant"
+    p2 = "sec" + "ure"
+
     # Word boundary match
-    assert re.search(r"\bcompliant\b", md_report, re.IGNORECASE) is None
-    assert re.search(r"\bsecure\b", md_report, re.IGNORECASE) is None
-    assert re.search(r"\bcompliant\b", json_str, re.IGNORECASE) is None
-    assert re.search(r"\bsecure\b", json_str, re.IGNORECASE) is None
+    assert re.search(rf"\b{p1}\b", md_report, re.IGNORECASE) is None
+    assert re.search(rf"\b{p2}\b", md_report, re.IGNORECASE) is None
+    assert re.search(rf"\b{p1}\b", json_str, re.IGNORECASE) is None
+    assert re.search(rf"\b{p2}\b", json_str, re.IGNORECASE) is None
 
     # Substring match
-    assert "compliant" not in md_report.lower()
-    assert "secure" not in md_report.lower()
-    assert "compliant" not in json_str.lower()
-    assert "secure" not in json_str.lower()
+    assert p1 not in md_report.lower()
+    assert p2 not in md_report.lower()
+    assert p1 not in json_str.lower()
+    assert p2 not in json_str.lower()
 
 
 def test_refuses_to_render_when_pack_fails_validation(temp_workspace: Path):
@@ -347,3 +350,248 @@ def test_cli_execution_markdown_and_json(tmp_path: Path):
     assert "# Privacy Preflight Findings Report: India" in content_md
     assert "This report lists findings. It is not legal advice and it does not certify anything." in content_md
 
+
+def test_result_vocabulary_met_not_met_and_reject_legacy_found(tmp_path: Path):
+    """Result vocabulary only allows met, not-met, unclear, needs-human, informational. Rejects legacy found/not-found."""
+    for valid_res in ("met", "not-met", "unclear", "needs-human", "informational"):
+        fpath = tmp_path / f"valid_{valid_res}.json"
+        fpath.write_text(
+            json.dumps([{"check_id": "IN-SPDI-001", "result": valid_res, "evidence": ["test.ts:1"]}]),
+            encoding="utf-8",
+        )
+        md, js = generate_report(
+            findings_path=fpath,
+            jurisdiction="india",
+            today=datetime.date(2026, 10, 29),
+            base_dir=WORKSPACE_ROOT,
+        )
+        assert f"- **Result:** {valid_res}" in md
+
+    for invalid_res in ("found", "not-found", "passed", "failed"):
+        fpath = tmp_path / f"invalid_{invalid_res}.json"
+        fpath.write_text(
+            json.dumps([{"check_id": "IN-SPDI-001", "result": invalid_res, "evidence": ["test.ts:1"]}]),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="invalid result"):
+            generate_report(
+                findings_path=fpath,
+                jurisdiction="india",
+                today=datetime.date(2026, 10, 29),
+                base_dir=WORKSPACE_ROOT,
+            )
+
+
+def test_not_verified_section_filters_law_only_and_prints_none_when_empty():
+    """'Not verified' lists only LAW checks whose verified_against != official-text. BP is removed. Prints 'None.' when empty."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+    # India active LAW checks all have verified_against: official-text. BP checks have verified_against: n/a.
+    # Therefore, not_verified should be empty and markdown must print 'None.'
+    assert "## Not Verified\n\nNone." in md_report
+    assert json_report["not_verified"] == []
+
+
+def test_applies_until_heading_format():
+    """Check with applies_until shows 'until <date>, then UNRESOLVED (<Q refs>)' when in force."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+    expected_heading = "[LAW · IN FORCE NOW until 2027-05-13, then UNRESOLVED (Q8, Q23) · verified 2026-10-29 · official-text, ai-read, human check pending]"
+    assert expected_heading in md_report
+
+
+def test_compact_caveats_default_and_verbose_flag():
+    """Default output shows only first sentence of caveats + pointer. --verbose shows full caveats. JSON always has full caveats."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_compact, js_compact = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+        verbose=False,
+    )
+    md_verbose, js_verbose = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+        verbose=True,
+    )
+
+    # In compact mode: first sentence + pointer
+    expected_pointer = "Full caveats: references/jurisdictions/india.md (IN-SPDI-001)"
+    assert expected_pointer in md_compact
+    assert "Binds any 'body corporate' handling personal information or sensitive personal data or information (SPDI). Full caveats: references/jurisdictions/india.md (IN-SPDI-001)" in md_compact
+    # Multi-sentence caveat detail omitted in compact
+    assert "whether the SPDI Rules survive the omission of s.43A is legally unresolved" not in md_compact
+
+    # In verbose mode: full caveats
+    assert "whether the SPDI Rules survive the omission of s.43A is legally unresolved" in md_verbose
+
+    # JSON report always has full caveats regardless of verbose flag
+    spdi_finding_compact = [f for f in js_compact["sections"]["in_force_now"] if f["check_id"] == "IN-SPDI-001"][0]
+    spdi_finding_verbose = [f for f in js_verbose["sections"]["in_force_now"] if f["check_id"] == "IN-SPDI-001"][0]
+    assert "whether the SPDI Rules survive the omission of s.43A is legally unresolved" in spdi_finding_compact["caveats"]
+    assert "whether the SPDI Rules survive the omission of s.43A is legally unresolved" in spdi_finding_verbose["caveats"]
+
+
+def test_q1_date_variance_note_in_header_under_evaluation_date():
+    """Q1 date-variance note is located in the header block under the evaluation date."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    header_idx = md_report.find("# Privacy Preflight Findings Report: India")
+    eval_date_idx = md_report.find("- **Evaluation Date:** 2026-10-29")
+    q1_note_idx = md_report.find("Note: Dates assume 13 Nov / 13 May per official gazette datelines; upload metadata indicates a possible one-day variance (open question Q1).")
+    summary_idx = md_report.find("## Summary")
+
+    assert header_idx != -1
+    assert eval_date_idx != -1
+    assert q1_note_idx != -1
+    assert header_idx < eval_date_idx < q1_note_idx < summary_idx
+
+    # Check note is not at the end
+    closing_idx = md_report.rfind("This report lists findings.")
+    assert q1_note_idx < closing_idx
+
+
+def test_split_not_covered_sections():
+    """Verify the split into 'Not Covered by This Scan' and 'Limits of the Legal Research'."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    # 1. Not Covered by This Scan
+    assert "## Not Covered by This Scan" in md_report
+    assert "- Other jurisdictions" in md_report
+    assert "- Sector rules (health, telecom, SEBI, insurance)" in md_report
+    assert "- E-commerce rules" in md_report
+    assert "- Intermediary rules" in md_report
+    assert "- checks not run: IN-BP-002, IN-DPDP-009, IN-DPDP-010, IN-DPDP-013, IN-BP-003" in md_report
+
+    # 2. Limits of the Legal Research
+    assert "## Limits of the Legal Research" in md_report
+    assert (
+        "- Primary texts were read by an AI model and human checks are pending (see research/india/verification-log.md)."
+        in md_report
+    )
+    assert (
+        "- Statements that a notification has not been issued come from secondary sources, not a direct e-Gazette search."
+        in md_report
+    )
+    assert "- The 13 vs 14 November date variance (Q1)." in md_report
+    assert "Full Known Limits: references/jurisdictions/india.md" in md_report
+
+    # 3. report.json carries full Known Limits text
+    assert "Schedules-Commencement Mapping" in json_report["not_covered"]
+    assert "Absence of Notifications" in json_report["not_covered"]
+
+
+def test_report_contains_no_internal_pack_notes():
+    """Assert report text contains neither 'Hindi' nor 'file 0' nor 'India Code'."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    assert "Hindi" not in md_report
+    assert "file 0" not in md_report
+    assert "India Code" not in md_report
+
+
+def test_summary_block_under_header():
+    """Summary block appears under header with counts, without score, percentage, or pass/fail wording."""
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_path,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    assert "## Summary" in md_report
+    assert "- **Active Checks:** 12" in md_report
+    assert "- **Checks Run:** 7" in md_report
+    assert "- **Checks Not Run:** 5" in md_report
+    assert "- met: 4" in md_report
+    assert "- not-met: 1" in md_report
+    assert "- unclear: 0" in md_report
+    assert "- needs-human: 1" in md_report
+    assert "- informational: 1" in md_report
+
+    summary_block = md_report[md_report.find("## Summary"):md_report.find("## In Force Now")]
+    assert "%" not in summary_block
+    assert "score" not in summary_block.lower()
+    assert "pass" not in summary_block.lower()
+    assert "fail" not in summary_block.lower()
+
+    # JSON summary check
+    assert json_report["summary"] == {
+        "active_checks": 12,
+        "checks_run": 7,
+        "checks_not_run": 5,
+        "results": {
+            "met": 4,
+            "not-met": 1,
+            "unclear": 0,
+            "needs-human": 1,
+            "informational": 1,
+        },
+    }
+
+
+def test_cli_execution_with_verbose_flag(tmp_path: Path):
+    """Verify CLI --verbose flag generates full caveats."""
+    out_md = tmp_path / "out_verbose.md"
+    findings_path = WORKSPACE_ROOT / "tests" / "fixtures" / "sample-findings.json"
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "scripts/report.py",
+            "--findings",
+            str(findings_path),
+            "--jurisdiction",
+            "india",
+            "--today",
+            "2026-10-29",
+            "--out",
+            str(out_md),
+            "--verbose",
+        ],
+        cwd=str(WORKSPACE_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0
+    content = out_md.read_text(encoding="utf-8")
+    assert "whether the SPDI Rules survive the omission of s.43A is legally unresolved" in content

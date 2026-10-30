@@ -1,7 +1,7 @@
 [
   {
     "check_id": "IN-SPDI-001",
-    "result": "found",
+    "result": "met",
     "evidence": [
       "src/pages/PrivacyPolicy.tsx:15",
       "https://example.com/privacy-policy"
@@ -11,7 +11,7 @@
   },
   {
     "check_id": "IN-DPDP-002",
-    "result": "found",
+    "result": "met",
     "evidence": [
       "src/components/SignupModal.tsx:48",
       "https://example.com/notice"
@@ -20,16 +20,16 @@
   },
   {
     "check_id": "IN-DPDP-004",
-    "result": "not-found",
+    "result": "not-met",
     "evidence": [
       "src/components/SignupForm.tsx:102"
     ],
     "suggested_fix": "Uncheck default consent checkboxes and provide separate toggles per purpose.",
-    "notes": "Found pre-ticked consent toggle covering marketing and analytics."
+    "notes": "Detected pre-ticked consent toggle covering marketing and analytics."
   },
   {
     "check_id": "IN-DPDP-008",
-    "result": "found",
+    "result": "met",
     "evidence": [
       "src/components/Footer.tsx:24",
       "https://example.com/contact"
@@ -48,7 +48,7 @@
   },
   {
     "check_id": "IN-BP-001",
-    "result": "found",
+    "result": "met",
     "evidence": [
       "public/fonts/inter-var.woff2",
       "public/vendor/bootstrap.bundle.min.js"
@@ -65,4 +65,3 @@
     "notes": "Age gate prompt exists; sufficiency of parental verification requires legal review."
   }
 ]
-

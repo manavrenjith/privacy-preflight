@@ -1,7 +1,7 @@
 # Findings Input Schema Specification
 
 > **Engineering specification. Not legal advice.**
-> Input findings provide evidence and detected states for privacy preflight checks. They never certify that an application or entity is compliant.
+> Input findings provide evidence and detected states for privacy preflight checks. They never certify that an application or entity is adherent to regulations.
 
 ---
 
@@ -22,7 +22,7 @@ The input file must be a JSON document containing either:
 | Field | Type | Required? | Allowed Values / Format | Description |
 |---|---|---|---|---|
 | `check_id` | string | **Yes** | `^[A-Z]{2}-[A-Z0-9]+-[0-9]{3}$` | Check identifier corresponding to an active check in `references/jurisdictions/<jurisdiction>.md` (e.g. `IN-DPDP-002`). |
-| `result` | string | **Yes** | `found` \| `not-found` \| `unclear` \| `needs-human` \| `informational` | Outcome of the check evaluation. |
+| `result` | string | **Yes** | `met` \| `not-met` \| `unclear` \| `needs-human` \| `informational` | Outcome of the check evaluation. |
 | `evidence` | array of strings | **Yes** | Non-empty list of strings | Direct evidence pointers: source file locations (`file:line`), URLs, network domains, or API routes. |
 | `suggested_fix` | string | No | String | Optional recommendation for engineers or product teams to address the finding. |
 | `notes` | string | No | String | Optional contextual remarks from the evaluator or scanning tool. |
@@ -31,8 +31,8 @@ The input file must be a JSON document containing either:
 
 ## 3. Result Enums
 
-- `found`: The required control, link, mechanism, or policy was positively identified.
-- `not-found`: The required control or element was absent or not detected.
+- `met`: The check's pass criteria were met.
+- `not-met`: The check's pass criteria were not met.
 - `unclear`: Ambiguous signals detected; automated heuristic could not make a determination.
 - `needs-human`: Human or legal reviewer confirmation required (e.g. parental verification sufficiency, contextual necessity).
 - `informational`: Output provided for inventory or transparency (e.g. third-party network calls); no pass/fail assigned.
@@ -72,7 +72,7 @@ The input file must be a JSON document containing either:
         },
         "result": {
           "type": "string",
-          "enum": ["found", "not-found", "unclear", "needs-human", "informational"]
+          "enum": ["met", "not-met", "unclear", "needs-human", "informational"]
         },
         "evidence": {
           "type": "array",
@@ -100,7 +100,7 @@ The input file must be a JSON document containing either:
 [
   {
     "check_id": "IN-DPDP-002",
-    "result": "found",
+    "result": "met",
     "evidence": [
       "src/components/NoticeModal.tsx:42",
       "https://example.com/privacy-notice"

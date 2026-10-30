@@ -1,0 +1,16 @@
+// Test fixture: Restrictive Firebase Storage security rules
+// Addresses IN-BP-003 and IN-DPDP-013. Not for production use.
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Restrict access: Only authenticated users can access their own files
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Deny all other access by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

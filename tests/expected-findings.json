@@ -1,0 +1,151 @@
+{
+  "flawed-app": {
+    "IN-BP-004": {
+      "check_id": "IN-BP-004",
+      "result": "informational",
+      "file": "demo/flawed-app/index.html",
+      "reason": "demo/flawed-app/index.html: Third-party requests to fonts.googleapis.com and cdn.analytics.example.test detected (inventory only; legal status unclear)."
+    },
+    "IN-BP-001": {
+      "check_id": "IN-BP-001",
+      "result": "not-met",
+      "file": "demo/flawed-app/index.html",
+      "reason": "demo/flawed-app/index.html: External static assets loaded from fonts.googleapis.com and cdn.analytics.example.test instead of being self-hosted."
+    },
+    "IN-DPDP-004": {
+      "check_id": "IN-DPDP-004",
+      "result": "not-met",
+      "file": "demo/flawed-app/signup.html",
+      "reason": "demo/flawed-app/signup.html: Bundled marketing and analytics consent in a single pre-ticked checkbox."
+    },
+    "IN-DPDP-002": {
+      "check_id": "IN-DPDP-002",
+      "result": "not-met",
+      "file": "demo/flawed-app/signup.html",
+      "reason": "demo/flawed-app/signup.html: Signup form contains no link to any privacy notice describing withdrawal, rights, or complaints."
+    },
+    "IN-DPDP-008": {
+      "check_id": "IN-DPDP-008",
+      "result": "not-met",
+      "file": "demo/flawed-app/index.html",
+      "reason": "demo/flawed-app/index.html: Neither footer nor consent screen publishes contact details for data inquiries."
+    },
+    "IN-BP-002": {
+      "check_id": "IN-BP-002",
+      "result": "not-met",
+      "file": "demo/flawed-app/contact.html",
+      "reason": "demo/flawed-app/contact.html: Contact page is reachable only through four nested navigation links from landing page."
+    },
+    "IN-DPDP-009": {
+      "check_id": "IN-DPDP-009",
+      "result": "not-met",
+      "file": "demo/flawed-app/index.html",
+      "reason": "demo/flawed-app/index.html: No published page or controls exist for exercising rights of access, correction, erasure, or nomination."
+    },
+    "IN-DPDP-010": {
+      "check_id": "IN-DPDP-010",
+      "result": "not-met",
+      "file": "demo/flawed-app/index.html",
+      "reason": "demo/flawed-app/index.html: No published grievance redressal mechanism or stated response timeline exists."
+    },
+    "IN-DPDP-011": {
+      "check_id": "IN-DPDP-011",
+      "result": "needs-human",
+      "file": "demo/flawed-app/signup.html",
+      "reason": "demo/flawed-app/signup.html: Signup omits date-of-birth and age verification and lacks any parental consent branch."
+    },
+    "IN-DPDP-013": {
+      "check_id": "IN-DPDP-013",
+      "result": "not-met",
+      "file": "demo/flawed-app/logging.json",
+      "reason": "demo/flawed-app/logging.json: Configures 7-day log retention below the one-year standard and repository commits plaintext secrets in demo/flawed-app/.env."
+    },
+    "IN-BP-003": {
+      "check_id": "IN-BP-003",
+      "result": "not-met",
+      "file": "demo/flawed-app/auth.js",
+      "reason": "demo/flawed-app/auth.js: Uses MD5 password hashing, demo/flawed-app/nginx.conf lacks HSTS, and demo/flawed-app/storage.rules allows public write."
+    },
+    "IN-SPDI-001": {
+      "check_id": "IN-SPDI-001",
+      "result": "not-met",
+      "file": "demo/flawed-app/index.html",
+      "reason": "demo/flawed-app/index.html: No published privacy policy meeting Rule 4 and no named Grievance Officer with contact details."
+    }
+  },
+  "clean-app": {
+    "IN-BP-004": {
+      "check_id": "IN-BP-004",
+      "result": "informational",
+      "file": "demo/clean-app/index.html",
+      "reason": "demo/clean-app/index.html: Zero external third-party network or cross-border transfer requests detected."
+    },
+    "IN-BP-001": {
+      "check_id": "IN-BP-001",
+      "result": "met",
+      "file": "demo/clean-app/index.html",
+      "reason": "demo/clean-app/index.html: All static assets and font references are self-hosted with no third-party CDNs."
+    },
+    "IN-DPDP-004": {
+      "check_id": "IN-DPDP-004",
+      "result": "met",
+      "file": "demo/clean-app/signup.html",
+      "reason": "demo/clean-app/signup.html: Provides separate, unbundled, unchecked consent checkboxes for marketing and analytics."
+    },
+    "IN-DPDP-002": {
+      "check_id": "IN-DPDP-002",
+      "result": "met",
+      "file": "demo/clean-app/notice.html",
+      "reason": "demo/clean-app/notice.html: Linked from signup and describes withdrawal, rights, and complaint routes with a communication link."
+    },
+    "IN-DPDP-008": {
+      "check_id": "IN-DPDP-008",
+      "result": "met",
+      "file": "demo/clean-app/notice.html",
+      "reason": "demo/clean-app/notice.html: Publishes Data Protection Officer role title and dpo@example.com in footer, signup, and notice."
+    },
+    "IN-BP-002": {
+      "check_id": "IN-BP-002",
+      "result": "met",
+      "file": "demo/clean-app/contact.html",
+      "reason": "demo/clean-app/contact.html: Contact details and contact page are directly accessible within at most two clicks."
+    },
+    "IN-DPDP-009": {
+      "check_id": "IN-DPDP-009",
+      "result": "met",
+      "file": "demo/clean-app/rights.html",
+      "reason": "demo/clean-app/rights.html: Dedicated rights portal covering access, correction, erasure, and nomination with authentication requirements."
+    },
+    "IN-DPDP-010": {
+      "check_id": "IN-DPDP-010",
+      "result": "met",
+      "file": "demo/clean-app/grievance.html",
+      "reason": "demo/clean-app/grievance.html: Published grievance route explicitly stating a 30-day response timeline."
+    },
+    "IN-DPDP-011": {
+      "check_id": "IN-DPDP-011",
+      "result": "needs-human",
+      "file": "demo/clean-app/signup.html",
+      "reason": "demo/clean-app/signup.html: Signup collects date of birth and includes parental consent branch for under-18; requires human review to confirm sufficiency."
+    },
+    "IN-DPDP-013": {
+      "check_id": "IN-DPDP-013",
+      "result": "met",
+      "file": "demo/clean-app/logging.json",
+      "reason": "demo/clean-app/logging.json: Configures 365-day log retention and secrets are excluded from repository via .env.example."
+    },
+    "IN-BP-003": {
+      "check_id": "IN-BP-003",
+      "result": "met",
+      "file": "demo/clean-app/auth.js",
+      "reason": "demo/clean-app/auth.js: Uses argon2id hashing, demo/clean-app/nginx.conf enforces HSTS, and demo/clean-app/storage.rules restricts access."
+    },
+    "IN-SPDI-001": {
+      "check_id": "IN-SPDI-001",
+      "result": "met",
+      "file": "demo/clean-app/privacy.html",
+      "reason": "demo/clean-app/privacy.html: Published privacy policy covering collection, purpose, disclosure, and security with a named Grievance Officer."
+    }
+  }
+}
+

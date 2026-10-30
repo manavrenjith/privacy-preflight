@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flawed Demo App - Home</title>
+  <!-- Planted flaw IN-BP-001 / IN-BP-004: Third-party Google Fonts link -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Planted flaw IN-BP-001 / IN-BP-004: Third-party analytics script loading on page load -->
+  <script src="https://cdn.analytics.example.test/track.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Flawed Demo Portal</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="signup.html">Sign Up</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Welcome to Flawed Demo App</h2>
+    <p>This is a test fixture demonstrating anti-patterns and planted privacy flaws under India jurisdiction checks.</p>
+    <p>Explore our features by visiting the <a href="signup.html">Sign Up</a> page.</p>
+  </main>
+
+  <!-- Planted flaw IN-DPDP-008 & IN-BP-002: No contact details in footer. Contact page reachable only via 4 nested links. -->
+  <!-- Planted flaw IN-SPDI-001: No privacy policy link or named Grievance Officer. -->
+  <!-- Planted flaw IN-DPDP-009: No controls for access, correction, erasure, or nomination. -->
+  <!-- Planted flaw IN-DPDP-010: No grievance redressal route or stated response timeline. -->
+  <footer>
+    <p>&copy; 2026 Flawed Demo App. All rights reserved.</p>
+    <p><a href="nav/step1.html">Site Directory</a></p>
+  </footer>
+</body>
+</html>
+

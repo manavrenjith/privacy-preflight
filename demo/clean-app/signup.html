@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clean Demo App - Sign Up</title>
+  <!-- Fixed IN-BP-001 / IN-BP-004: Self-hosted fonts, no third-party scripts -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Clean Demo Portal</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="signup.html">Sign Up</a>
+      <a href="notice.html">Notice</a>
+      <a href="rights.html">Rights Portal</a>
+      <a href="grievance.html">Grievances</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="contact.html">Contact Us</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Create Your Account</h2>
+
+    <!-- Fixed IN-DPDP-002: Notice clearly linked directly from signup screen -->
+    <div class="notice-banner">
+      <p>Before creating your account, please review our <a href="notice.html">Data Protection Notice</a> which describes your statutory rights, withdrawal routes, and grievance procedures.</p>
+    </div>
+
+    <form action="/register" method="POST">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required>
+      </div>
+
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input type="email" id="email" name="email" required>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+        <small>Passwords are hashed using industry-standard Argon2id.</small>
+      </div>
+
+      <!-- Fixed IN-DPDP-011: Date-of-birth field and verifiable parental consent branch for under-18 users -->
+      <div class="form-group">
+        <label for="dob">Date of Birth</label>
+        <input type="date" id="dob" name="dob" required>
+        <small>Required to determine age eligibility under Section 9 of the DPDP Act.</small>
+      </div>
+
+      <div id="parental-consent-branch" class="parental-branch">
+        <h3>Parental or Lawful Guardian Consent Branch</h3>
+        <p>If the applicant is under 18 years of age, verifiable consent from an identifiable adult parent or lawful guardian is required prior to processing personal data.</p>
+        
+        <div class="form-group">
+          <label for="guardian_name">Parent / Lawful Guardian Full Name</label>
+          <input type="text" id="guardian_name" name="guardian_name">
+        </div>
+
+        <div class="form-group">
+          <label for="guardian_email">Parent / Lawful Guardian Email Address</label>
+          <input type="email" id="guardian_email" name="guardian_email" placeholder="guardian@example.com">
+        </div>
+
+        <div class="consent-option">
+          <label for="guardian_declaration">
+            <input type="checkbox" id="guardian_declaration" name="guardian_declaration">
+            <span>I declare that I am the adult parent or lawful guardian of the applicant and provide verifiable consent for this account registration.</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Fixed IN-DPDP-004: Separate, unchecked consent toggles per distinct processing purpose -->
+      <fieldset class="consent-group">
+        <legend>Consent Preferences</legend>
+        <p style="margin-top: 0; font-size: 0.9rem; color: #4a5568;">Consent must be free, specific, informed, and unbundled. Select the optional purposes you wish to allow:</p>
+
+        <div class="consent-option">
+          <label for="consent_marketing">
+            <input type="checkbox" id="consent_marketing" name="consent_marketing">
+            <span><strong>Marketing Communications:</strong> I consent to receiving product updates, newsletters, and promotional announcements via email.</span>
+          </label>
+        </div>
+
+        <div class="consent-option">
+          <label for="consent_analytics">
+            <input type="checkbox" id="consent_analytics" name="consent_analytics">
+            <span><strong>Product Analytics:</strong> I consent to the processing of aggregated in-app telemetry to improve platform usability.</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <!-- Fixed IN-DPDP-008: Direct contact details on consent request screen -->
+      <p style="font-size: 0.85rem; color: #4a5568;">
+        For inquiries regarding this consent request, contact our Data Protection Officer at <a href="mailto:dpo@example.com">dpo@example.com</a>.
+      </p>
+
+      <button type="submit" class="btn-primary">Complete Registration</button>
+    </form>
+  </main>
+
+  <!-- Fixed IN-DPDP-008 & IN-BP-002: Contact details in footer, reachable in <= 2 clicks -->
+  <footer>
+    <div class="footer-content">
+      <div class="footer-nav">
+        <a href="index.html">Home</a>
+        <a href="signup.html">Sign Up</a>
+        <a href="notice.html">Notice</a>
+        <a href="rights.html">Rights</a>
+        <a href="grievance.html">Grievances</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="contact.html">Contact</a>
+      </div>
+      <div class="footer-contact">
+        <p><strong>Privacy Inquiries &amp; Authorized Contact:</strong> Data Protection Officer &mdash; <a href="mailto:dpo@example.com">dpo@example.com</a></p>
+        <p>&copy; 2026 Clean Demo App. All rights reserved. Test fixture only &mdash; not legal advice.</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
+

@@ -2,6 +2,7 @@ reports/
 sources/
 node_modules/
 .env
+!demo/flawed-app/.env
 
 __pycache__/
 .pytest_cache/

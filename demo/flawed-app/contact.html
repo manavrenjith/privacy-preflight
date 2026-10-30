@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Flawed Demo App - Contact Us</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.analytics.example.test/track.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Flawed Demo Portal</h1>
+    <nav>
+      <a href="index.html">Home</a>
+    </nav>
+  </header>
+  <main>
+    <h2>Contact Us</h2>
+    <p>This contact page is reachable only after navigating through 4 nested navigation links from the homepage.</p>
+    <form action="/submit-contact" method="POST">
+      <div class="form-group">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name">
+      </div>
+      <div class="form-group">
+        <label for="message">Message</label>
+        <textarea id="message" name="message" rows="4" style="width: 100%;"></textarea>
+      </div>
+      <button type="submit" class="btn-primary">Send Inquiry</button>
+    </form>
+  </main>
+  <!-- No contact details in footer -->
+  <footer>
+    <p>&copy; 2026 Flawed Demo App. All rights reserved.</p>
+  </footer>
+</body>
+</html>
+

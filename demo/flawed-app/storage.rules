@@ -1,0 +1,12 @@
+// Test fixture: Insecure Firebase Storage rules allowing public write access
+// Planted flaw for IN-BP-003 / IN-DPDP-013. Not for production use.
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      // Insecure: Public unrestricted write and read permissions
+      allow read, write: if true;
+    }
+  }
+}
+

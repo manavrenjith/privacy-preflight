@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clean Demo App - Data Principal Rights Portal</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Clean Demo Portal</h1>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="signup.html">Sign Up</a>
+      <a href="notice.html">Notice</a>
+      <a href="rights.html">Rights Portal</a>
+      <a href="grievance.html">Grievances</a>
+      <a href="privacy.html">Privacy Policy</a>
+      <a href="contact.html">Contact Us</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Data Principal Rights Portal</h2>
+    <p>Under the Digital Personal Data Protection Act, 2023 (Sections 11, 12, and 14) and DPDP Rules (Rule 14), you have specific statutory rights concerning personal data you have provided or consented to processing.</p>
+
+    <div class="notice-banner">
+      <h3>Required Authentication Particulars</h3>
+      <p>In accordance with Rule 14(1), exercising statutory rights requires identity verification. You must submit your request from your registered account email, accompanied by account credentials or an email verification code (OTP), before records can be disclosed, corrected, or erased.</p>
+    </div>
+
+    <!-- Right 1: Access -->
+    <h3>1. Right to Access Personal Data (Section 11)</h3>
+    <p>You may request a summary of the personal data processed, identities of all third parties or data fiduciaries with whom it has been shared, and details of all processing activities.</p>
+    <form action="/rights/access" method="POST">
+      <div class="form-group">
+        <label for="access_email">Registered Email Address</label>
+        <input type="email" id="access_email" name="email" required>
+      </div>
+      <button type="submit" class="btn-primary">Request Data Summary &amp; Recipient Inventory</button>
+    </form>
+
+    <!-- Right 2: Correction -->
+    <h3>2. Right to Correction and Updation (Section 12)</h3>
+    <p>You may request correction of inaccurate or misleading personal data, completion of incomplete data, or updating outdated information.</p>
+    <form action="/rights/correction" method="POST">
+      <div class="form-group">
+        <label for="correction_email">Registered Email Address</label>
+        <input type="email" id="correction_email" name="email" required>
+      </div>
+      <div class="form-group">
+        <label for="correction_details">Data Fields to Correct or Update</label>
+        <textarea id="correction_details" name="details" rows="3" required></textarea>
+      </div>
+      <button type="submit" class="btn-primary">Submit Correction Request</button>
+    </form>
+
+    <!-- Right 3: Erasure -->
+    <h3>3. Right to Erasure (Section 12)</h3>
+    <p>You may request erasure of your personal data where it is no longer necessary for the purpose for which it was collected, or upon withdrawal of consent, unless retention is mandated by law.</p>
+    <form action="/rights/erasure" method="POST">
+      <div class="form-group">
+        <label for="erasure_email">Registered Email Address</label>
+        <input type="email" id="erasure_email" name="email" required>
+      </div>
+      <div class="form-group">
+        <label for="erasure_reason">Reason for Erasure Request</label>
+        <select id="erasure_reason" name="reason">
+          <option value="withdrawn_consent">Consent Withdrawn</option>
+          <option value="purpose_fulfilled">Purpose Already Fulfilled</option>
+          <option value="account_closure">Permanent Account Closure</option>
+        </select>
+      </div>
+      <button type="submit" class="btn-primary">Submit Erasure Request</button>
+    </form>
+
+    <!-- Right 4: Nomination -->
+    <h3>4. Right to Nomination (Section 14)</h3>
+    <p>You may nominate an individual who shall, in the event of your death or incapacity, exercise your data principal rights on your behalf.</p>
+    <form action="/rights/nomination" method="POST">
+      <div class="form-group">
+        <label for="principal_email">Your Registered Email Address</label>
+        <input type="email" id="principal_email" name="email" required>
+      </div>
+      <div class="form-group">
+        <label for="nominee_name">Nominee Full Legal Name</label>
+        <input type="text" id="nominee_name" name="nominee_name" required>
+      </div>
+      <div class="form-group">
+        <label for="nominee_email">Nominee Email Address</label>
+        <input type="email" id="nominee_email" name="nominee_email" required placeholder="nominee@example.com">
+      </div>
+      <div class="form-group">
+        <label for="nominee_relationship">Relationship to Principal</label>
+        <input type="text" id="nominee_relationship" name="nominee_relationship" required>
+      </div>
+      <button type="submit" class="btn-primary">Register Nominee</button>
+    </form>
+  </main>
+
+  <footer>
+    <div class="footer-content">
+      <div class="footer-nav">
+        <a href="index.html">Home</a>
+        <a href="signup.html">Sign Up</a>
+        <a href="notice.html">Notice</a>
+        <a href="rights.html">Rights</a>
+        <a href="grievance.html">Grievances</a>
+        <a href="privacy.html">Privacy Policy</a>
+        <a href="contact.html">Contact</a>
+      </div>
+      <div class="footer-contact">
+        <p><strong>Privacy Inquiries &amp; Authorized Contact:</strong> Data Protection Officer &mdash; <a href="mailto:dpo@example.com">dpo@example.com</a></p>
+        <p>&copy; 2026 Clean Demo App. All rights reserved. Test fixture only &mdash; not legal advice.</p>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
+

@@ -1,0 +1,10 @@
+{
+  "_comment": "Test fixture: Flawed logging config with 7-day retention (planted flaw for IN-DPDP-013)",
+  "logging": {
+    "level": "info",
+    "retention_days": 7,
+    "format": "json",
+    "destination": "/var/log/flawed_app.log"
+  }
+}
+

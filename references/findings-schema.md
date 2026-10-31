@@ -15,7 +15,19 @@ This document specifies the JSON input format consumed by `scripts/report.py`. T
 
 The input file must be a JSON document containing either:
 - A JSON array of finding objects, or
-- A JSON object with a top-level `"findings"` array of finding objects.
+- A JSON object with a top-level `"findings"` array of finding objects, and an optional top-level `"scan"` object.
+
+### Optional Top-Level `"scan"` Object
+
+When findings are produced by an automated scanner (e.g. `scripts/crawl.py`), an optional `"scan"` object may provide overall scan coverage details:
+
+| Field | Type | Description |
+|---|---|---|
+| `pages_crawled` | integer | Total pages successfully crawled |
+| `max_depth_reached` | integer | Maximum click depth reached |
+| `pages_skipped` | integer | Total pages skipped (e.g. rate limit, robots.txt) |
+| `pages_failed` | integer | Total pages with HTTP errors or load failures |
+| `interactions` | string | Description of scanner interaction boundaries (e.g. `"none (no clicks except same-origin links, no forms submitted, no login)"`) |
 
 ### Required and Optional Fields per Finding
 
@@ -54,6 +66,16 @@ The input file must be a JSON document containing either:
       "type": "object",
       "required": ["findings"],
       "properties": {
+        "scan": {
+          "type": "object",
+          "properties": {
+            "pages_crawled": { "type": "integer" },
+            "max_depth_reached": { "type": "integer" },
+            "pages_skipped": { "type": "integer" },
+            "pages_failed": { "type": "integer" },
+            "interactions": { "type": "string" }
+          }
+        },
         "findings": {
           "type": "array",
           "items": { "$ref": "#/definitions/findingItem" }

@@ -595,3 +595,66 @@ def test_cli_execution_with_verbose_flag(tmp_path: Path):
     assert proc.returncode == 0
     content = out_md.read_text(encoding="utf-8")
     assert "whether the SPDI Rules survive the omission of s.43A is legally unresolved" in content
+
+
+def test_findings_without_scan_field_renders_without_scan_coverage(tmp_path: Path):
+    """Findings JSON with no 'scan' field renders successfully and output contains no 'Scan coverage' line."""
+    findings_file = tmp_path / "findings_no_scan.json"
+    findings_content = {
+        "findings": [
+            {
+                "check_id": "IN-BP-001",
+                "result": "met",
+                "evidence": ["All static assets are self-hosted."],
+            }
+        ]
+    }
+    findings_file.write_text(json.dumps(findings_content), encoding="utf-8")
+
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_file,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    assert "Scan coverage" not in md_report
+    assert json_report.get("scan") is None
+
+
+def test_findings_with_scan_missing_pages_skipped_renders_not_reported(tmp_path: Path):
+    """Findings JSON with a 'scan' object that lacks 'pages_skipped' renders 'skipped: not reported' and never 'skipped: 0'."""
+    findings_file = tmp_path / "findings_scan_missing_skipped.json"
+    findings_content = {
+        "scan": {
+            "pages_crawled": 5,
+            "max_depth_reached": 2,
+            # "pages_skipped" is omitted
+            "pages_failed": 0,
+            "interactions": "none (no clicks except same-origin links, no forms submitted, no login)",
+        },
+        "findings": [
+            {
+                "check_id": "IN-BP-001",
+                "result": "met",
+                "evidence": ["All static assets are self-hosted."],
+            }
+        ],
+    }
+    findings_file.write_text(json.dumps(findings_content), encoding="utf-8")
+
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_file,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    assert "Scan coverage:" in md_report
+    assert "skipped: not reported" in md_report
+    assert "skipped: 0" not in md_report
+    assert json_report["scan"]["pages_crawled"] == 5
+    assert "pages_skipped" not in json_report["scan"]
+

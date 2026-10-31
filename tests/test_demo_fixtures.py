@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Dict, List, Set
 
 import pytest
 
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
+if str(WORKSPACE_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE_ROOT))
 DEMO_DIR = WORKSPACE_ROOT / "demo"
 FLAWED_APP_DIR = DEMO_DIR / "flawed-app"
 CLEAN_APP_DIR = DEMO_DIR / "clean-app"

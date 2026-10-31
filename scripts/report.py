@@ -198,8 +198,14 @@ def generate_report(
     with findings_file.open("r", encoding="utf-8") as f:
         raw_findings = json.load(f)
 
-    if isinstance(raw_findings, dict) and "findings" in raw_findings:
-        findings_list = raw_findings["findings"]
+    scan_data: Optional[Dict[str, Any]] = None
+    if isinstance(raw_findings, dict):
+        if "scan" in raw_findings and isinstance(raw_findings["scan"], dict):
+            scan_data = raw_findings["scan"]
+        if "findings" in raw_findings and isinstance(raw_findings["findings"], list):
+            findings_list = raw_findings["findings"]
+        else:
+            raise ValueError("Findings JSON dict must contain a 'findings' list")
     elif isinstance(raw_findings, list):
         findings_list = raw_findings
     else:
@@ -329,8 +335,27 @@ def generate_report(
             "upload metadata indicates a possible one-day variance (open question Q1)."
         ),
         f"- **Jurisdiction:** {jurisdiction}",
-        "",
     ]
+
+    if scan_data is not None:
+        def _scan_val(k: str) -> Any:
+            v = scan_data.get(k)
+            return "not reported" if v is None else v
+
+        crawled = _scan_val("pages_crawled")
+        max_d = _scan_val("max_depth_reached")
+        skipped = _scan_val("pages_skipped")
+        failed = _scan_val("pages_failed")
+        interactions = _scan_val("interactions")
+        md_lines.append(
+            f"- **Scan coverage:** pages crawled: {crawled}, "
+            f"max depth: {max_d}, "
+            f"skipped: {skipped}, "
+            f"failed: {failed}; "
+            f"interactions: {interactions}"
+        )
+
+    md_lines.append("")
 
     # Summary block directly under header
     md_lines.append("## Summary")
@@ -508,6 +533,7 @@ def generate_report(
             "checks_not_run": len(not_run_checks),
             "results": result_counts,
         },
+        "scan": scan_data,
         "staleness_warning": (
             [{"check_id": c, "last_verified": d, "days_old": o} for c, d, o in stale_checks]
             if stale_checks

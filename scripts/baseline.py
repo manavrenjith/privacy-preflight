@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 MAX_FILE_SIZE = 1024 * 1024  # 1 MB
-SKIP_DIRS = {".git", "node_modules", "reports", "dist", "build", "__pycache__"}
+SKIP_DIRS = {".git", "node_modules", "vendor", "reports", "dist", "build", "__pycache__"}
 
 RULE_6_CATEGORIES = [
     "encryption/transport",
@@ -39,7 +39,12 @@ RULE_6_CATEGORIES = [
 ]
 
 AUTH_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".py", ".php", ".go", ".rb", ".java"}
+CODE_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".py", ".php"}
 AUTH_NAME_KEYWORDS = ("auth", "login", "password", "user", "account", "signup", "session")
+CONTENT_PASSWORD_REGEX = re.compile(r"""(?i)password|passwd|\bpwd\b""")
+CONTENT_HASH_REGEX = re.compile(
+    r"""(?i)md5|sha-?1\b|sha-?256|sha-?512|hmac|bcrypt|argon2|scrypt|pbkdf2|createhash|hashsync|password_hash|hashpw"""
+)
 
 LOGGING_EXTENSIONS = {".json", ".yaml", ".yml"}
 STORAGE_RULE_EXTENSIONS = {".rules"}
@@ -150,7 +155,7 @@ def is_secret_assignment(line: str) -> bool:
     return extract_secret_info(line) is not None
 
 
-def is_recognised_file(file_path: Path) -> Tuple[bool, str]:
+def is_recognised_file(file_path: Path, app_dir: Optional[Path] = None) -> Tuple[bool, str]:
     """
     Determine if a file matches recognised formats.
     Returns (is_recognised, format_kind).
@@ -188,8 +193,29 @@ def is_recognised_file(file_path: Path) -> Tuple[bool, str]:
         return True, "container_config"
 
     # 7. Auth code
+    # Rule 1: Basename keyword match (.js, .jsx, .ts, .tsx, .py, .php, .go, .rb, .java)
     if ext in AUTH_EXTENSIONS and any(k in name_lower for k in AUTH_NAME_KEYWORDS):
         return True, "auth_code"
+
+    # Rule 2: Parent folder name below scan root contains auth keyword (.js/.ts/.jsx/.tsx/.py/.php)
+    if ext in CODE_EXTENSIONS and app_dir is not None:
+        try:
+            rel = file_path.resolve().relative_to(app_dir.resolve())
+            if any(k in part.lower() for part in rel.parent.parts for k in AUTH_NAME_KEYWORDS):
+                return True, "auth_code"
+        except (ValueError, OSError):
+            pass
+
+    # Rule 3: Content (first 200 KB) mentions password AND hashing keywords (.js/.ts/.jsx/.tsx/.py/.php)
+    if ext in CODE_EXTENSIONS:
+        try:
+            with file_path.open("rb") as f:
+                head_bytes = f.read(200 * 1024)
+            head_text = head_bytes.decode("utf-8", errors="ignore")
+            if CONTENT_PASSWORD_REGEX.search(head_text) and CONTENT_HASH_REGEX.search(head_text):
+                return True, "auth_code"
+        except (OSError, PermissionError):
+            return False, "unreadable"
 
     return False, "unrecognised"
 
@@ -202,6 +228,8 @@ def scan_directory(
     List[str],             # bp_informational
     int,                   # files_scanned
     int,                   # files_skipped
+    int,                   # unanalysed_code_files
+    int,                   # oversize_unreadable_code_files
 ]:
     """Scan directory for technical configurations, safeguards, and baseline markers."""
     dpdp_matches: Dict[str, List[str]] = {cat: [] for cat in RULE_6_CATEGORIES}
@@ -210,6 +238,8 @@ def scan_directory(
 
     files_scanned = 0
     files_skipped = 0
+    unanalysed_code_files = 0
+    oversize_unreadable_code_files = 0
 
     for root, dirs, files in os.walk(app_dir, followlinks=False):
         # Prune skip directories in-place
@@ -221,24 +251,39 @@ def scan_directory(
                 files_skipped += 1
                 continue
 
+            if fname.lower().endswith(".min.js"):
+                files_skipped += 1
+                continue
+
             try:
                 st = file_path.stat()
                 if st.st_size > MAX_FILE_SIZE:
                     files_skipped += 1
+                    if file_path.suffix.lower() in CODE_EXTENSIONS:
+                        oversize_unreadable_code_files += 1
                     continue
             except OSError:
                 files_skipped += 1
+                if file_path.suffix.lower() in CODE_EXTENSIONS:
+                    oversize_unreadable_code_files += 1
                 continue
 
-            recognised, kind = is_recognised_file(file_path)
+            recognised, kind = is_recognised_file(file_path, app_dir=app_dir)
             if not recognised:
                 files_skipped += 1
+                if file_path.suffix.lower() in CODE_EXTENSIONS:
+                    if kind == "unreadable":
+                        oversize_unreadable_code_files += 1
+                    else:
+                        unanalysed_code_files += 1
                 continue
 
             try:
                 raw_content = file_path.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 files_skipped += 1
+                if file_path.suffix.lower() in CODE_EXTENSIONS:
+                    oversize_unreadable_code_files += 1
                 continue
 
             files_scanned += 1
@@ -485,7 +530,15 @@ def scan_directory(
                             )
                 continue
 
-    return dpdp_matches, bp_advisories, bp_informational, files_scanned, files_skipped
+    return (
+        dpdp_matches,
+        bp_advisories,
+        bp_informational,
+        files_scanned,
+        files_skipped,
+        unanalysed_code_files,
+        oversize_unreadable_code_files,
+    )
 
 
 def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
@@ -494,7 +547,29 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
     Returns findings JSON conforming to references/findings-schema.md.
     """
     app_path = Path(app_dir).resolve()
-    dpdp_matches, bp_advisories, bp_informational, files_scanned, files_skipped = scan_directory(app_path)
+    (
+        dpdp_matches,
+        bp_advisories,
+        bp_informational,
+        files_scanned,
+        files_skipped,
+        unanalysed_code_files,
+        oversize_unreadable_code_files,
+    ) = scan_directory(app_path)
+
+    if unanalysed_code_files == 1:
+        unanalysed_sentence = "1 code file (.js .jsx .ts .tsx .py .php) in recognised extensions was not analysed because no auth or password-hashing signal was found. "
+    elif unanalysed_code_files > 1:
+        unanalysed_sentence = f"{unanalysed_code_files} code files (.js .jsx .ts .tsx .py .php) in recognised extensions were not analysed because no auth or password-hashing signal was found. "
+    else:
+        unanalysed_sentence = ""
+
+    if oversize_unreadable_code_files == 1:
+        skipped_code_sentence = "1 code file was skipped because it exceeded 1 MB or could not be read. "
+    elif oversize_unreadable_code_files > 1:
+        skipped_code_sentence = f"{oversize_unreadable_code_files} code files were skipped because they exceeded 1 MB or could not be read. "
+    else:
+        skipped_code_sentence = ""
 
     # -------------------------------------------------------------------------
     # IN-DPDP-013: Reasonable security safeguards and access logging (LAW, assisted)
@@ -514,8 +589,10 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"Formats checked: nginx.conf (*.conf): HSTS header and TLS configuration; "
         f"storage.rules (*.rules): public write permissions and authorization conditions; "
         f"logging.json (*log*.json): log retention days and logging configuration; "
-        f"auth code (*.js, *.ts, *.py, *.php with auth/login/password/user/account/signup/session in name): password hashing algorithms; "
+        f"auth code (*.js, *.jsx, *.ts, *.tsx, *.py, *.php, *.go, *.rb, *.java with auth/login/password/user/account/signup/session in filename; *.js, *.jsx, *.ts, *.tsx, *.py, *.php with those keywords in parent folder; or *.js, *.jsx, *.ts, *.tsx, *.py, *.php with password and hashing keywords in content): password hashing algorithms; "
         f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
+        f"{unanalysed_sentence}"
+        f"{skipped_code_sentence}"
         f"This is not an assessment of the application's security."
     )
 
@@ -560,8 +637,10 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"Formats checked: nginx.conf (*.conf): HSTS header and TLS configuration; "
         f"storage.rules (*.rules): public write permissions and authorization conditions; "
         f"logging.json (*log*.json): log retention days and logging configuration; "
-        f"auth code (*.js, *.ts, *.py, *.php with auth/login/password/user/account/signup/session in name): password hashing algorithms; "
+        f"auth code (*.js, *.jsx, *.ts, *.tsx, *.py, *.php, *.go, *.rb, *.java with auth/login/password/user/account/signup/session in filename; *.js, *.jsx, *.ts, *.tsx, *.py, *.php with those keywords in parent folder; or *.js, *.jsx, *.ts, *.tsx, *.py, *.php with password and hashing keywords in content): password hashing algorithms; "
         f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
+        f"{unanalysed_sentence}"
+        f"{skipped_code_sentence}"
         f"Only the listed patterns are checked; other password hashing code may not be detected. Calls split across several lines may not be detected. "
         f"This is not an assessment of the application's security."
     )

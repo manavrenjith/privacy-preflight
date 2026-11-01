@@ -1066,3 +1066,300 @@ def test_baseline_all_clear_wording_and_notes(tmp_path: Path):
     bp = findings["IN-BP-003"]
     assert any("no advisory findings among the patterns checked (1 scanned files)" in ev for ev in bp["evidence"])
     assert "Only the listed patterns are checked; other password hashing code may not be detected. Calls split across several lines may not be detected." in bp["notes"]
+
+
+# ---------------------------------------------------------------------------
+# Task 12b: Expanded Auth Code Recognition, Accounting & Notes Tests
+# ---------------------------------------------------------------------------
+
+def test_auth_code_parent_folder_rule_relative_to_root(tmp_path: Path):
+    """Parent folder keyword matches only below scan root; host folder names cannot trigger it."""
+    host_dir = tmp_path / "user_auth_env"
+    host_dir.mkdir()
+    app_dir = host_dir / "app"
+    app_dir.mkdir()
+
+    # Rule 2 matches below scan root
+    (app_dir / "routes" / "api" / "auth").mkdir(parents=True)
+    (app_dir / "routes" / "api" / "auth" / "index.js").write_text(
+        "const crypto = require('crypto');\n"
+        "function hashPassword(password) { return crypto.createHash('md5').update(password).digest('hex'); }\n",
+        encoding="utf-8",
+    )
+    (app_dir / "routes" / "api" / "user").mkdir(parents=True)
+    (app_dir / "routes" / "api" / "user" / "index.js").write_text(
+        "const crypto = require('crypto');\n"
+        "function hashUser(password) { return crypto.createHash('sha256').update(password).digest('hex'); }\n",
+        encoding="utf-8",
+    )
+
+    # Standalone file directly in app: basename 'standalone.js', no auth words in parent parts below app_dir
+    (app_dir / "standalone.js").write_text(
+        "const greeting = 'hello world';\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_ev = findings["IN-BP-003"]["evidence"]
+    assert any("routes/api/auth/index.js: advisory: weak password hashing algorithm 'md5' detected" in ev for ev in bp_ev)
+    assert not any("standalone.js" in ev for ev in bp_ev)
+
+    dpdp_ev = findings["IN-DPDP-013"]["evidence"]
+    assert any("routes/api/auth/index.js: access control (authentication): password hashing found: md5" in ev for ev in dpdp_ev)
+    assert any("routes/api/user/index.js: access control (authentication): password hashing found: sha256" in ev for ev in dpdp_ev)
+    assert not any("standalone.js" in ev for ev in dpdp_ev)
+
+
+def test_auth_code_content_rule_compound_password(tmp_path: Path):
+    """Content mentions compound identifier 'passwordHash' without word boundary plus 'bcrypt'."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    services_dir = app_dir / "services"
+    services_dir.mkdir()
+
+    (services_dir / "tokens.js").write_text(
+        "const bcrypt = require('bcrypt');\n"
+        "async function storeToken(rawInput) {\n"
+        "  const passwordHash = await bcrypt.hash(rawInput, 10);\n"
+        "  return passwordHash;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    dpdp_ev = findings["IN-DPDP-013"]["evidence"]
+    assert any("services/tokens.js: access control (authentication): password hashing found: bcrypt" in ev for ev in dpdp_ev)
+
+    bp_ev = findings["IN-BP-003"]["evidence"]
+    assert any("services/tokens.js: informational: recommended password hashing algorithm 'bcrypt' configured" in ev for ev in bp_ev)
+
+
+def test_location_hash_plus_password_not_classified(tmp_path: Path):
+    """Bare word 'hash' (e.g. location.hash) with 'password' must not classify non-auth files."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    handlers_dir = app_dir / "handlers"
+    handlers_dir.mkdir()
+
+    (handlers_dir / "navigation.js").write_text(
+        "function handleNav() {\n"
+        "  const hash = window.location.hash;\n"
+        "  const password = getQueryParam('password');\n"
+        "  if (hash === '#reset') showReset(password);\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    dpdp_ev = findings["IN-DPDP-013"]["evidence"]
+    assert not any("handlers/navigation.js" in ev for ev in dpdp_ev)
+    bp_ev = findings["IN-BP-003"]["evidence"]
+    assert not any("handlers/navigation.js" in ev for ev in bp_ev)
+
+
+def test_file_with_password_but_no_hash_not_classified(tmp_path: Path):
+    """File with bare word 'password' but no hashing word is not classified; singular N asserted."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    cfg_dir = app_dir / "config"
+    cfg_dir.mkdir()
+
+    (cfg_dir / "credentials.js").write_text(
+        "const password = 'my_database_password';\n"
+        "module.exports = { password };\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp = findings["IN-BP-003"]
+    assert not any("credentials.js" in ev for ev in bp["evidence"])
+    assert "1 code file (.js .jsx .ts .tsx .py .php) in recognised extensions was not analysed because no auth or password-hashing signal was found." in bp["notes"]
+
+    dpdp = findings["IN-DPDP-013"]
+    assert not any("credentials.js" in ev for ev in dpdp["evidence"])
+    assert "1 code file (.js .jsx .ts .tsx .py .php) in recognised extensions was not analysed because no auth or password-hashing signal was found." in dpdp["notes"]
+
+
+def test_auth_code_node_modules_and_vendor_skipped(tmp_path: Path):
+    """node_modules and vendor directories are pruned and not counted in N or M."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    nm = app_dir / "node_modules" / "auth-pkg"
+    nm.mkdir(parents=True)
+    (nm / "index.js").write_text("const bcrypt = require('bcrypt'); bcrypt.hash(password, 10);", encoding="utf-8")
+
+    vendor = app_dir / "vendor" / "laravel"
+    vendor.mkdir(parents=True)
+    (vendor / "login.php").write_text("<?php password_hash($password, PASSWORD_BCRYPT);", encoding="utf-8")
+
+    (app_dir / "auth.js").write_text(
+        "const argon2 = require('argon2');\n"
+        "async function hash(password) { return await argon2.hash(password); }\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp = findings["IN-BP-003"]
+    assert not any("node_modules" in ev for ev in bp["evidence"])
+    assert not any("vendor" in ev for ev in bp["evidence"])
+    # N is 0, so N sentence is omitted entirely
+    assert "was not analysed because no auth" not in bp["notes"]
+    assert "were not analysed because no auth" not in bp["notes"]
+    assert "exceeded 1 MB or could not be read" not in bp["notes"]
+
+
+def test_auth_code_minified_file_skipped(tmp_path: Path):
+    """.min.js file is skipped in scan loop without incrementing N or M."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "bundle.min.js").write_text(
+        "function hash(password){return crypto.createHash('md5').update(password).digest('hex');}",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp = findings["IN-BP-003"]
+    assert not any("bundle.min.js" in ev for ev in bp["evidence"])
+    # N is 0, so N sentence is omitted
+    assert "not analysed because no auth" not in bp["notes"]
+    assert "exceeded 1 MB or could not be read" not in bp["notes"]
+
+
+def test_tsx_file_with_hashing_signal_classified(tmp_path: Path):
+    """.tsx file with hashing signal is classified; asserts exact line 1 and 3 matches."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    comp_dir = app_dir / "components"
+    comp_dir.mkdir()
+
+    tsx_content = (
+        "import argon2 from 'argon2';\n"
+        "export async function register(password: string) {\n"
+        "  return await argon2.hash(password);\n"
+        "}\n"
+    )
+    (comp_dir / "Register.tsx").write_text(tsx_content, encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    dpdp_ev = findings["IN-DPDP-013"]["evidence"]
+    assert "components/Register.tsx: access control (authentication): password hashing found: argon2 (lines 1, 3)" in dpdp_ev
+
+    bp_ev = findings["IN-BP-003"]["evidence"]
+    assert "components/Register.tsx: informational: recommended password hashing algorithm 'argon2' configured (lines 1, 3)" in bp_ev
+
+
+def test_unanalysed_and_multiple_oversize_code_files_accounting(tmp_path: Path):
+    """Multiple oversize code files assert plural M; multiple candidate code files assert plural N."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    # Scanned code files
+    (app_dir / "auth.js").write_text(
+        "const argon2 = require('argon2');\n"
+        "async function hash(password) { return await argon2.hash(password); }\n",
+        encoding="utf-8",
+    )
+    (app_dir / "routes" / "auth").mkdir(parents=True)
+    (app_dir / "routes" / "auth" / "index.js").write_text(
+        "const crypto = require('crypto');\n"
+        "function hash(password) { return crypto.createHash('sha256').update(password).digest('hex'); }\n",
+        encoding="utf-8",
+    )
+
+    # 2 unanalysed code files in recognised extensions (.js, .ts)
+    (app_dir / "utils").mkdir()
+    (app_dir / "utils" / "math.js").write_text("export function add(a, b) { return a + b; }\n", encoding="utf-8")
+    (app_dir / "helpers").mkdir()
+    (app_dir / "helpers" / "format.ts").write_text("export function fmt(s: string) { return s.trim(); }\n", encoding="utf-8")
+
+    # 2 oversize code files in recognised extensions (.py, .ts)
+    (app_dir / "large1.py").write_text("#" + "x" * (MAX_FILE_SIZE + 10), encoding="utf-8")
+    (app_dir / "large2.ts").write_text("//" + "y" * (MAX_FILE_SIZE + 10), encoding="utf-8")
+
+    # Directories that should be pruned without incrementing N or M
+    (app_dir / "vendor" / "pkg").mkdir(parents=True)
+    (app_dir / "vendor" / "pkg" / "lib.js").write_text("console.log('vendor');", encoding="utf-8")
+    (app_dir / "dist").mkdir()
+    (app_dir / "dist" / "app.js").write_text("console.log('dist');", encoding="utf-8")
+
+    # Minified file skipped without incrementing N or M
+    (app_dir / "main.min.js").write_text("console.log('min');", encoding="utf-8")
+
+    # Non-code file
+    (app_dir / "index.html").write_text("<h1>Hello</h1>", encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_notes = findings["IN-BP-003"]["notes"]
+    dpdp_notes = findings["IN-DPDP-013"]["notes"]
+
+    expected_n = "2 code files (.js .jsx .ts .tsx .py .php) in recognised extensions were not analysed because no auth or password-hashing signal was found."
+    expected_m = "2 code files were skipped because they exceeded 1 MB or could not be read."
+
+    assert expected_n in bp_notes
+    assert expected_m in bp_notes
+    assert expected_n in dpdp_notes
+    assert expected_m in dpdp_notes
+
+
+def test_single_oversize_code_file_singular_m(tmp_path: Path):
+    """Single oversize code file asserts singular M sentence."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "large.py").write_text("#" + "x" * (MAX_FILE_SIZE + 10), encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    expected_m = "1 code file was skipped because it exceeded 1 MB or could not be read."
+    assert expected_m in findings["IN-BP-003"]["notes"]
+    assert expected_m in findings["IN-DPDP-013"]["notes"]
+
+
+def test_unreadable_code_file_counted_in_m(tmp_path: Path):
+    """Code file that raises OSError on read is classified unreadable and counted in M, not N."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    unreadable_file = app_dir / "broken.js"
+    unreadable_file.write_text("some code", encoding="utf-8")
+
+    # Simulate OSError during is_recognised_file Rule 3 open
+    original_open = Path.open
+
+    def failing_open(self, *args, **kwargs):
+        if self.name == "broken.js":
+            raise PermissionError("Simulated unreadable file")
+        return original_open(self, *args, **kwargs)
+
+    Path.open = failing_open
+    try:
+        doc = evaluate_baseline(app_dir)
+    finally:
+        Path.open = original_open
+
+    findings = {f["check_id"]: f for f in doc["findings"]}
+    bp_notes = findings["IN-BP-003"]["notes"]
+
+    expected_m = "1 code file was skipped because it exceeded 1 MB or could not be read."
+    assert expected_m in bp_notes
+    assert "was not analysed because no auth" not in bp_notes
+

@@ -47,10 +47,35 @@ CONFIG_EXTENSIONS = {".conf"}
 BACKUP_EXTENSIONS = {".sh", ".py", ".json", ".yaml", ".yml", ".conf"}
 
 # Regexes
-SECRET_ASSIGNMENT_REGEX = re.compile(
-    r"""(?i)\b[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*\s*[:=]\s*(['"]?)([^'"\s#;\r\n]+)\1"""
+SECRET_KEY_REGEX = re.compile(
+    r"""(?i)\b[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*\b"""
 )
+
+SECRET_ASSIGNMENT_REGEX = re.compile(
+    r"""(?i)\b([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*)\s*[:=]\s*(['"])(.*?)\2"""
+)
+
+CONNECTION_STRING_CREDENTIAL_REGEX = re.compile(
+    r"""(?i)[a-zA-Z][a-zA-Z0-9+.-]*://[^:\s/@]+:[^@\s/]+@[^/\s'"]+"""
+)
+
+CONN_ASSIGNMENT_REGEX = re.compile(
+    r"""(?i)\b([A-Z0-9_]+)\s*[:=]\s*['"]?([a-zA-Z][a-zA-Z0-9+.-]*://[^:\s/@]+:[^@\s/]+@[^/\s'"]+)"""
+)
+
 NON_SECRET_VALUES = {"null", "none", "false", "true", "undefined", ""}
+PLACEHOLDER_WORDS = {
+    "",
+    "null",
+    "none",
+    "true",
+    "false",
+    "undefined",
+    "changeme",
+    "change-me",
+    "todo",
+    "example",
+}
 
 WEAK_HASH_REGEX = re.compile(r"""(?i)\b(md5|sha1|sha-1|sha256|sha-256)\b""")
 PASSWORD_KEYWORD_REGEX = re.compile(r"""(?i)\b(password|passwd|pwd)\b""")
@@ -67,28 +92,59 @@ STORAGE_RESTRICTED_REGEX = re.compile(
 
 LOG_RETENTION_REGEX = re.compile(r"""(?i)["']retention(?:_days)?["']\s*:\s*([0-9]+)""")
 LOG_LEVEL_REGEX = re.compile(r"""(?i)["']level["']\s*:\s*["']([^"']+)["']""")
-LOG_DEST_REGEX = re.compile(r"""(?i)["']destination["']\s*:\s*["']([^"']+)["']""")
 
 BACKUP_ENCRYPTION_REGEX = re.compile(r"""(?i)\b(gpg|kms|aes(?:-256)?|openssl\s+enc|encrypt(?:ed|ion)?)\b""")
 
 
-def is_secret_assignment(line: str) -> bool:
-    """Check if a line assigns a non-empty value to a secret-like key."""
-    m = SECRET_ASSIGNMENT_REGEX.search(line)
-    if m:
-        val = m.group(2).strip()
-        if val and val.lower() not in NON_SECRET_VALUES:
-            return True
+def is_placeholder_value(val: str) -> bool:
+    """
+    Check if a value is a placeholder:
+    - empty, null, none, true, false, undefined, changeme, change-me, todo, example
+    - starts with your- or your_
+    - <...>
+    - xxx (x only, case-insensitive)
+    """
+    clean = val.strip().strip("'\"").strip()
+    clean_lower = clean.lower()
+    if clean_lower in PLACEHOLDER_WORDS:
+        return True
+    if clean_lower.startswith("your-") or clean_lower.startswith("your_"):
+        return True
+    if clean.startswith("<") and clean.endswith(">") and len(clean) >= 2:
+        return True
+    if clean_lower and all(c == "x" for c in clean_lower):
+        return True
     return False
 
 
-def get_safe_snippet(line: str, is_env: bool = False) -> str:
-    """Return a sanitized snippet that never leaks secret values."""
-    if is_env:
-        return "<line redacted: possible secret>"
-    if is_secret_assignment(line):
-        return "<line redacted: possible secret>"
-    return line.strip()[:80]
+def extract_secret_info(line: str) -> Optional[Tuple[str, str]]:
+    """
+    Check if a line in code or configuration contains a committed secret assignment.
+    Returns (kind, key_name) where kind is 'secret' or 'connection_string',
+    or None if no committed secret.
+    """
+    stripped = line.strip()
+    if stripped.startswith(("//", "#", "/*", "*")):
+        return None
+
+    m_conn = CONN_ASSIGNMENT_REGEX.search(line)
+    if m_conn:
+        key_name = m_conn.group(1).strip()
+        return ("connection_string", key_name)
+
+    m_sec = SECRET_ASSIGNMENT_REGEX.search(line)
+    if m_sec:
+        key_name = m_sec.group(1).strip()
+        val = m_sec.group(3).strip()
+        if not is_placeholder_value(val):
+            return ("secret", key_name)
+
+    return None
+
+
+def is_secret_assignment(line: str) -> bool:
+    """Check if a line assigns a hardcoded secret literal or credential."""
+    return extract_secret_info(line) is not None
 
 
 def is_recognised_file(file_path: Path) -> Tuple[bool, str]:
@@ -152,8 +208,6 @@ def scan_directory(
     files_scanned = 0
     files_skipped = 0
 
-    backup_files_found = 0
-
     for root, dirs, files in os.walk(app_dir, followlinks=False):
         # Prune skip directories in-place
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not (Path(root) / d).is_symlink()]
@@ -190,63 +244,99 @@ def scan_directory(
 
             # --- 1. Environment / Committed Secrets File ---
             if kind == "env":
-                env_keys_found = 0
+                env_secret_count = 0
+                other_assignment_count = 0
                 for idx, line in enumerate(lines):
                     stripped = line.strip()
                     if not stripped or stripped.startswith("#"):
                         continue
                     if "=" in stripped:
                         line_no = idx + 1
-                        env_keys_found += 1
-                        dpdp_matches["committed secrets"].append(
-                            f"committed secrets: {rel_path_str}:{line_no}: <line redacted: possible secret>"
-                        )
-                if env_keys_found == 0:
+                        key_part, _, val_part = stripped.partition("=")
+                        key_name = key_part.strip()
+                        val_str = val_part.strip()
+                        if not key_name:
+                            continue
+
+                        # (b) Connection string with credentials
+                        if CONNECTION_STRING_CREDENTIAL_REGEX.search(val_str):
+                            env_secret_count += 1
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {key_name} (value not shown)"
+                            )
+                        # (a) Secret key name with non-placeholder value
+                        elif SECRET_KEY_REGEX.search(key_name) and not is_placeholder_value(val_str):
+                            env_secret_count += 1
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {key_name} (value not shown)"
+                            )
+                        # (c) Other assignments
+                        else:
+                            other_assignment_count += 1
+
+                if other_assignment_count > 0:
+                    noun = "other assignment" if other_assignment_count == 1 else "other assignments"
                     dpdp_matches["committed secrets"].append(
-                        f"committed secrets: {rel_path_str} (committed environment configuration file)"
+                        f"{rel_path_str}: committed secrets: committed environment file with {other_assignment_count} {noun} (keys and values not shown)"
+                    )
+                elif env_secret_count == 0:
+                    dpdp_matches["committed secrets"].append(
+                        f"{rel_path_str}: committed secrets: (committed environment configuration file)"
                     )
                 continue
 
-            # --- 2. Auth Code (Password Hashing) ---
+            # --- 2. Auth Code (Password Hashing & Code Secrets) ---
             if kind == "auth_code":
-                # Check for secrets committed in auth code
-                for idx, line in enumerate(lines):
-                    if is_secret_assignment(line):
-                        line_no = idx + 1
-                        dpdp_matches["committed secrets"].append(
-                            f"committed secrets: {rel_path_str}:{line_no}: <line redacted: possible secret>"
-                        )
+                file_weak_hashes: Dict[str, List[int]] = {}
+                file_strong_hashes: Dict[str, List[int]] = {}
 
-                # Weak hashing with proximity
                 for idx, line in enumerate(lines):
                     line_no = idx + 1
+                    secret_info = extract_secret_info(line)
+                    if secret_info:
+                        sec_kind, sec_key = secret_info
+                        if sec_kind == "connection_string":
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
+                            )
+                        else:
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
+                            )
+
                     weak_match = WEAK_HASH_REGEX.search(line)
                     if weak_match:
-                        # Check password keyword in window of +/- 3 lines
                         win_start = max(0, idx - 3)
                         win_end = min(len(lines), idx + 4)
                         has_pwd = any(PASSWORD_KEYWORD_REGEX.search(lines[j]) for j in range(win_start, win_end))
                         if has_pwd:
                             alg = weak_match.group(1).lower().replace("-", "")
-                            dpdp_matches["access control"].append(
-                                f"access control (authentication): password hashing found: {alg} ({rel_path_str}:{line_no})"
-                            )
-                            bp_advisories.append(
-                                f"advisory: weak password hashing algorithm '{alg}' detected in {rel_path_str}:{line_no}"
-                            )
+                            file_weak_hashes.setdefault(alg, []).append(line_no)
 
                     strong_match = STRONG_HASH_REGEX.search(line)
                     if strong_match:
                         alg = strong_match.group(1).lower()
-                        # Avoid double-reporting if line has both argon2 and argon2id
                         if "argon2id" in line.lower():
                             alg = "argon2id"
-                        dpdp_matches["access control"].append(
-                            f"access control (authentication): password hashing found: {alg} ({rel_path_str}:{line_no})"
-                        )
-                        bp_informational.append(
-                            f"informational: recommended password hashing algorithm '{alg}' configured in {rel_path_str}:{line_no}"
-                        )
+                        file_strong_hashes.setdefault(alg, []).append(line_no)
+
+                for alg, line_list in sorted(file_weak_hashes.items()):
+                    lines_str = f"line {line_list[0]}" if len(line_list) == 1 else f"lines {', '.join(str(l) for l in line_list)}"
+                    dpdp_matches["access control"].append(
+                        f"{rel_path_str}: access control (authentication): password hashing found: {alg} ({lines_str})"
+                    )
+                    bp_advisories.append(
+                        f"{rel_path_str}: advisory: weak password hashing algorithm '{alg}' detected ({lines_str})"
+                    )
+
+                for alg, line_list in sorted(file_strong_hashes.items()):
+                    lines_str = f"line {line_list[0]}" if len(line_list) == 1 else f"lines {', '.join(str(l) for l in line_list)}"
+                    dpdp_matches["access control"].append(
+                        f"{rel_path_str}: access control (authentication): password hashing found: {alg} ({lines_str})"
+                    )
+                    bp_informational.append(
+                        f"{rel_path_str}: informational: recommended password hashing algorithm '{alg}' configured ({lines_str})"
+                    )
                 continue
 
             # --- 3. Web Server / Nginx Config ---
@@ -254,38 +344,45 @@ def scan_directory(
                 has_hsts = False
                 for idx, line in enumerate(lines):
                     line_no = idx + 1
-                    if is_secret_assignment(line):
-                        dpdp_matches["committed secrets"].append(
-                            f"committed secrets: {rel_path_str}:{line_no}: <line redacted: possible secret>"
-                        )
+                    secret_info = extract_secret_info(line)
+                    if secret_info:
+                        sec_kind, sec_key = secret_info
+                        if sec_kind == "connection_string":
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
+                            )
+                        else:
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
+                            )
 
                     if HSTS_HEADER_REGEX.search(line):
                         has_hsts = True
                         dpdp_matches["encryption/transport"].append(
-                            f"encryption/transport: Strict-Transport-Security header configured ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: encryption/transport: Strict-Transport-Security header configured"
                         )
                         bp_informational.append(
-                            f"informational: Strict-Transport-Security header configured in {rel_path_str}:{line_no}"
+                            f"{rel_path_str}:{line_no}: informational: Strict-Transport-Security header configured"
                         )
 
                     tls_m = TLS_PROTOCOLS_REGEX.search(line)
                     if tls_m:
                         protocols = tls_m.group(1).strip()
                         dpdp_matches["encryption/transport"].append(
-                            f"encryption/transport: TLS protocols configured: {protocols} ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: encryption/transport: TLS protocols configured: {protocols}"
                         )
 
                     if HTTPS_REDIRECT_REGEX.search(line):
                         dpdp_matches["encryption/transport"].append(
-                            f"encryption/transport: HTTP to HTTPS redirect configured ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: encryption/transport: HTTP to HTTPS redirect configured"
                         )
 
                 if not has_hsts:
                     dpdp_matches["encryption/transport"].append(
-                        f"encryption/transport: no Strict-Transport-Security header found in {rel_path_str}"
+                        f"{rel_path_str}: encryption/transport: no Strict-Transport-Security header found"
                     )
                     bp_advisories.append(
-                        f"advisory: no Strict-Transport-Security header found in {rel_path_str}"
+                        f"{rel_path_str}: advisory: no Strict-Transport-Security header found"
                     )
                 continue
 
@@ -296,17 +393,17 @@ def scan_directory(
                     if STORAGE_PUBLIC_WRITE_REGEX.search(line):
                         snippet = line.strip()[:80]
                         dpdp_matches["access control"].append(
-                            f"access control: storage rules permit public write access ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: access control: storage rules permit public write access"
                         )
                         bp_advisories.append(
-                            f"advisory: public write access permitted in storage rules: {rel_path_str}:{line_no} ({snippet})"
+                            f"{rel_path_str}:{line_no}: advisory: public write access permitted in storage rules ({snippet})"
                         )
                     elif STORAGE_RESTRICTED_REGEX.search(line):
                         dpdp_matches["access control"].append(
-                            f"access control: storage rules restrict access with authorization conditions ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: access control: storage rules restrict access with authorization conditions"
                         )
                         bp_informational.append(
-                            f"informational: storage access restricted by authorization conditions in {rel_path_str}:{line_no}"
+                            f"{rel_path_str}:{line_no}: informational: storage access restricted by authorization conditions"
                         )
                 continue
 
@@ -318,41 +415,40 @@ def scan_directory(
                     if ret_m:
                         days = ret_m.group(1)
                         dpdp_matches["retention settings"].append(
-                            f"retention settings: log retention configured for {days} days ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: retention settings: log retention configured for {days} days"
                         )
                         bp_informational.append(
-                            f"informational: log retention configured for {days} days in {rel_path_str}:{line_no}"
+                            f"{rel_path_str}:{line_no}: informational: log retention configured for {days} days"
                         )
 
                     lvl_m = LOG_LEVEL_REGEX.search(line)
                     if lvl_m:
                         snippet = line.strip()[:80]
                         dpdp_matches["access logging and monitoring"].append(
-                            f"access logging and monitoring: logging configuration detected in {rel_path_str}:{line_no} ({snippet})"
+                            f"{rel_path_str}:{line_no}: access logging and monitoring: logging configuration detected ({snippet})"
                         )
                 continue
 
             # --- 6. Backup Configuration ---
             if kind == "backup_config":
-                backup_files_found += 1
                 has_enc = False
                 for idx, line in enumerate(lines):
                     line_no = idx + 1
                     if BACKUP_ENCRYPTION_REGEX.search(line):
                         has_enc = True
                         dpdp_matches["backups/continuity"].append(
-                            f"backups/continuity: encrypted backup configuration found ({rel_path_str}:{line_no})"
+                            f"{rel_path_str}:{line_no}: backups/continuity: encrypted backup configuration found"
                         )
                         bp_informational.append(
-                            f"informational: encrypted backup configuration detected in {rel_path_str}:{line_no}"
+                            f"{rel_path_str}:{line_no}: informational: encrypted backup configuration detected"
                         )
                         break
                 if not has_enc:
                     dpdp_matches["backups/continuity"].append(
-                        f"backups/continuity: unencrypted backup configuration found ({rel_path_str})"
+                        f"{rel_path_str}: backups/continuity: unencrypted backup configuration found"
                     )
                     bp_advisories.append(
-                        f"advisory: unencrypted backup configuration detected in {rel_path_str}"
+                        f"{rel_path_str}: advisory: unencrypted backup configuration detected"
                     )
                 continue
 
@@ -360,10 +456,17 @@ def scan_directory(
             if kind == "container_config":
                 for idx, line in enumerate(lines):
                     line_no = idx + 1
-                    if is_secret_assignment(line):
-                        dpdp_matches["committed secrets"].append(
-                            f"committed secrets: {rel_path_str}:{line_no}: <line redacted: possible secret>"
-                        )
+                    secret_info = extract_secret_info(line)
+                    if secret_info:
+                        sec_kind, sec_key = secret_info
+                        if sec_kind == "connection_string":
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
+                            )
+                        else:
+                            dpdp_matches["committed secrets"].append(
+                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
+                            )
                 continue
 
     return dpdp_matches, bp_advisories, bp_informational, files_scanned, files_skipped
@@ -455,19 +558,19 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         else:
             bp_evidence = bp_advisories + bp_informational
 
-        # Compile suggested_fix only for advisories actually found
+        # Compile suggested_fix only for advisories actually found as a single line separated by "; "
         fixes: List[str] = []
         if any("weak password hashing" in adv for adv in bp_advisories):
-            fixes.append("Upgrade password hashing to Argon2id or bcrypt with appropriate work factor.")
+            fixes.append("Upgrade password hashing to Argon2id or bcrypt with appropriate work factor")
         if any("no Strict-Transport-Security header" in adv for adv in bp_advisories):
-            fixes.append("Configure Strict-Transport-Security header (e.g. 'max-age=31536000; includeSubDomains; preload') in web server configuration.")
+            fixes.append("Configure Strict-Transport-Security header (e.g. 'max-age=31536000; includeSubDomains; preload') in web server configuration")
         if any("public write access" in adv for adv in bp_advisories):
-            fixes.append("Restrict storage rules to authenticated users or require explicit authorization conditions instead of 'if true'.")
+            fixes.append("Restrict storage rules to authenticated users or require explicit authorization conditions instead of 'if true'")
         if any("unencrypted backup" in adv for adv in bp_advisories):
-            fixes.append("Enable encryption for database and volume backups.")
+            fixes.append("Enable encryption for database and volume backups")
 
         if fixes:
-            bp_suggested_fix = "\n".join(f"{i + 1}. {fix}" for i, fix in enumerate(fixes))
+            bp_suggested_fix = "; ".join(fixes)
         else:
             bp_suggested_fix = None
 

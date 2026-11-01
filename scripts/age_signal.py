@@ -48,6 +48,28 @@ ALLOWED_EXTENSIONS = {
 HTML_COMMENT_EXTENSIONS = {".html", ".htm", ".vue", ".svelte", ".php"}
 SIGNAL_KINDS = ["dob_field", "age_field", "over_18_toggle", "parental_branch"]
 
+PREFERRED_STEM_PARTS = {
+    "signup",
+    "onboard",
+    "onboarding",
+    "register",
+    "registration",
+    "auth",
+    "checkout",
+}
+
+
+def is_preferred_file(file_path: str | Path) -> bool:
+    """
+    Check if file stem contains preferred onboarding/signup words when split on non-letters.
+    Matches whole parts only: signup, onboard, onboarding, register, registration,
+    auth, checkout. 'author' does NOT match.
+    """
+    stem_lower = Path(file_path).stem.lower()
+    parts = set(re.findall(r"[a-z]+", stem_lower))
+    return bool(parts & PREFERRED_STEM_PARTS)
+
+
 HTML_COMMENT_REGEX = re.compile(r"<!--[\s\S]*?-->")
 
 # 1. dob_field regexes
@@ -104,39 +126,40 @@ def check_dob_field(lines: List[str], i: int) -> bool:
 def check_age_field(line: str) -> bool:
     """
     Check if line represents an age_field:
-    - Attribute name, id, or for is exactly 'age' or 'your_age'/'your-age'
-    - Label text (trimmed, case-insensitive, ignoring trailing colon or asterisk)
-      is exactly 'age' or 'your age'
+    - name, id, or for attributes matching age or your_age/your-age
+    - Strict label matching: text must be exactly "age" or "your age" (ignoring whitespace and trailing :/*)
     """
     if AGE_ATTR_REGEX.search(line):
         return True
-    m = AGE_LABEL_REGEX.search(line)
-    if m:
-        label_inner = m.group(1)
-        text_only = re.sub(r"<[^>]+>", "", label_inner).strip().rstrip(":* \t").lower()
-        if text_only in ("age", "your age"):
+    for m in AGE_LABEL_REGEX.finditer(line):
+        label_raw = m.group(1).strip()
+        label_clean = re.sub(r"[\s:*]+$", "", label_raw).strip().lower()
+        if label_clean in ("age", "your age"):
             return True
     return False
 
 
 def check_over_18_toggle(line: str) -> bool:
-    """Check if line matches over_18_toggle text."""
+    """Check if line matches over_18_toggle keywords."""
     return bool(OVER_18_TOGGLE_REGEX.search(line))
 
 
 def check_parental_branch(line: str) -> bool:
-    """Check if line matches parental_branch text."""
+    """Check if line matches parental consent branch keywords."""
     return bool(PARENTAL_BRANCH_REGEX.search(line))
 
 
-def extract_child_directed_words(line: str) -> List[str]:
-    """Extract child-directed words for informational notes."""
-    return [w.lower() for w in CHILD_DIRECTED_REGEX.findall(line)]
+def extract_child_directed_words(line: str) -> Set[str]:
+    """Extract distinct matched child-directed words from a line."""
+    words: Set[str] = set()
+    for m in CHILD_DIRECTED_REGEX.finditer(line):
+        words.add(m.group(0).lower())
+    return words
 
 
 def scan_directory(
     app_dir: Path,
-) -> Tuple[Dict[str, List[Tuple[str, int, str]]], Set[str], int, int]:
+) -> Tuple[Dict[str, List[Tuple[str, int, str]]], Dict[str, List[str]], Set[str], int, int]:
     """
     Walk directory, filter eligible files, strip HTML comments where appropriate,
     and detect signals.
@@ -144,12 +167,15 @@ def scan_directory(
     findings_by_kind: Dict[str, List[Tuple[str, int, str]]] = {
         k: [] for k in SIGNAL_KINDS
     }
+    files_by_kind: Dict[str, List[str]] = {
+        k: [] for k in SIGNAL_KINDS
+    }
     child_words: Set[str] = set()
     files_scanned = 0
     files_skipped = 0
 
     if not app_dir.is_dir():
-        return findings_by_kind, child_words, 0, 0
+        return findings_by_kind, files_by_kind, child_words, 0, 0
 
     for root, dirnames, filenames in os.walk(app_dir, followlinks=False):
         # Prune skipped dirs and symlinked directories
@@ -222,53 +248,74 @@ def scan_directory(
                     continue
 
                 if check_dob_field(lines, i):
-                    if len(findings_by_kind["dob_field"]) < 3:
-                        findings_by_kind["dob_field"].append(
-                            (rel_path_str, line_no, trimmed_snippet)
-                        )
+                    findings_by_kind["dob_field"].append(
+                        (rel_path_str, line_no, trimmed_snippet)
+                    )
+                    if rel_path_str not in files_by_kind["dob_field"]:
+                        files_by_kind["dob_field"].append(rel_path_str)
 
                 if check_age_field(line):
-                    if len(findings_by_kind["age_field"]) < 3:
-                        findings_by_kind["age_field"].append(
-                            (rel_path_str, line_no, trimmed_snippet)
-                        )
+                    findings_by_kind["age_field"].append(
+                        (rel_path_str, line_no, trimmed_snippet)
+                    )
+                    if rel_path_str not in files_by_kind["age_field"]:
+                        files_by_kind["age_field"].append(rel_path_str)
 
                 if check_over_18_toggle(line):
-                    if len(findings_by_kind["over_18_toggle"]) < 3:
-                        findings_by_kind["over_18_toggle"].append(
-                            (rel_path_str, line_no, trimmed_snippet)
-                        )
+                    findings_by_kind["over_18_toggle"].append(
+                        (rel_path_str, line_no, trimmed_snippet)
+                    )
+                    if rel_path_str not in files_by_kind["over_18_toggle"]:
+                        files_by_kind["over_18_toggle"].append(rel_path_str)
 
                 if check_parental_branch(line):
-                    if len(findings_by_kind["parental_branch"]) < 3:
-                        findings_by_kind["parental_branch"].append(
-                            (rel_path_str, line_no, trimmed_snippet)
-                        )
+                    findings_by_kind["parental_branch"].append(
+                        (rel_path_str, line_no, trimmed_snippet)
+                    )
+                    if rel_path_str not in files_by_kind["parental_branch"]:
+                        files_by_kind["parental_branch"].append(rel_path_str)
 
                 for cw in extract_child_directed_words(line):
                     child_words.add(cw)
 
-    return findings_by_kind, child_words, files_scanned, files_skipped
+    return findings_by_kind, files_by_kind, child_words, files_scanned, files_skipped
 
 
 def evaluate_age_signals(app_dir: str | Path) -> Dict[str, Any]:
     """
     Perform age signal analysis on target application directory.
-    Returns findings JSON compliant with references/findings-schema.md.
+    Returns findings JSON conforming to references/findings-schema.md.
     """
     app_path = Path(app_dir).resolve()
-    findings_by_kind, child_words, files_scanned, files_skipped = scan_directory(app_path)
+    findings_by_kind, files_by_kind, child_words, files_scanned, files_skipped = scan_directory(app_path)
 
     evidence_lines: List[str] = []
     for kind in SIGNAL_KINDS:
         items = findings_by_kind.get(kind, [])
         if items:
-            for rel_path, line_no, snippet in items[:3]:
+            preferred = [it for it in items if is_preferred_file(it[0])]
+            others = [it for it in items if not is_preferred_file(it[0])]
+            selected = (preferred + others)[:3]
+            for rel_path, line_no, snippet in selected:
                 evidence_lines.append(f"{rel_path}:{line_no}: {kind}: {snippet}")
         else:
             evidence_lines.append(f"{kind}: not found in scanned files")
 
     result = "needs-human" if files_scanned > 0 else "unclear"
+
+    file_summary_parts: List[str] = []
+    for kind in SIGNAL_KINDS:
+        matched_files = files_by_kind.get(kind, [])
+        count = len(matched_files)
+        if count > 0:
+            shown = matched_files[:5]
+            suffix = f" (and {count - 5} more)" if count > 5 else ""
+            file_summary_parts.append(
+                f"{kind}: {count} file{'s' if count != 1 else ''} with matches ({', '.join(shown)}{suffix})"
+            )
+        else:
+            file_summary_parts.append(f"{kind}: 0 files with matches")
+    files_summary_line = "Files with matches per kind: " + "; ".join(file_summary_parts) + "."
 
     child_words_line = (
         f"Child-directed words detected in scanned files (informational only): {', '.join(sorted(child_words))}."
@@ -282,6 +329,7 @@ def evaluate_age_signals(app_dir: str | Path) -> Dict[str, Any]:
         f"A human must confirm whether the application is child-directed or accessible to children. "
         f"Matches in code comments in .js/.ts/.py files are not excluded. "
         f"A match is a presence signal for a human reviewer, not a verified consent branch. "
+        f"{files_summary_line} "
         f"{child_words_line}"
     )
 
@@ -325,4 +373,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

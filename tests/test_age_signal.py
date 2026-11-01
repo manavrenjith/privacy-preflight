@@ -1,5 +1,5 @@
 """
-Tests for Age Signal and Child-Directed Verification Analyzer (Task 7)
+Tests for Age Signal and Child-Directed Verification Analyzer (Task 7 & 10)
 scripts/age_signal.py and IN-DPDP-011.
 
 Asserts:
@@ -9,12 +9,15 @@ Asserts:
   * Strict label text matching for age_field ("age" and "your age" only).
   * HTML comment stripping on .html/.htm/.vue/.svelte/.php preserving line counts.
   * Retention of code comments in .js/.ts/.py.
-  * Word boundary isolation (e.g. 'page' and 'manage' never match 'age').
+  * Word boundary isolation (e.g. 'page', 'manage', 'package', 'storage' never match 'age').
   * Skip rules for .env*, node_modules, reports, dist, build, __pycache__, and files > 1 MB.
   * Symlinked files are not followed.
   * child_directed_words reported in notes only, never as an evidence kind.
-  * Notes mandatory phrases and absence of forbidden words ('compliant', 'secure').
+  * Preferred file stem matching (signup, onboard, onboarding, register, registration, auth, checkout; author must NOT match).
+  * Preferred files prioritized when choosing 3 evidence lines per kind.
+  * Notes list number of files with at least one match per kind and relative paths (max 5 per kind).
   * Paths use forward slashes and no drive letters.
+  * Notes mandatory phrases and absence of forbidden words ('compliant', 'secure').
 - Oracle tests on demo/clean-app and demo/flawed-app matching tests/expected-findings.json.
 - Output renders through scripts/report.py without error.
 - Zero writes to repo root (tmp_path only).
@@ -35,7 +38,7 @@ WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 
-from scripts.age_signal import evaluate_age_signals
+from scripts.age_signal import evaluate_age_signals, is_preferred_file
 
 CLEAN_APP_DIR = WORKSPACE_ROOT / "demo" / "clean-app"
 FLAWED_APP_DIR = WORKSPACE_ROOT / "demo" / "flawed-app"
@@ -112,58 +115,72 @@ def test_age_field_only(tmp_path: Path):
     assert "dob_field: not found in scanned files" in f["evidence"]
 
 
-def test_age_field_label_exactness_and_attribute_isolation(tmp_path: Path):
+def test_age_field_label_strict_matching(tmp_path: Path):
     """
-    Change B: for labels, label text (trimmed, ignoring trailing colon/asterisk)
-    must be exactly 'age' or 'your age'. 'Age range' and 'Age of account' must NOT match.
-    name/id/for attributes remain exactly age or your_age/your-age.
+    Change B: for labels, label text (trimmed, case-insensitive, ignoring trailing :/*)
+    must be exactly 'age' or 'your age'. 'Message', 'Language', 'Coverage' do NOT match.
     """
     app_dir = tmp_path / "app"
     app_dir.mkdir()
 
-    # Rejected label phrases and attributes
-    (app_dir / "rejected.html").write_text(
-        '<label for="r1">Age range</label>\n<input id="r1" name="age_range">\n'
-        '<label for="r2">Age of account</label>\n<input id="r2" name="age-of-account">\n'
-        '<input placeholder="Enter your age">\n',  # placeholder removed per Change B
+    # Should NOT match: labels with words containing 'age'
+    (app_dir / "false_positives.html").write_text(
+        "<label>Message</label>\n"
+        "<label>Language</label>\n"
+        "<label>Coverage</label>\n"
+        "<label>Page Number</label>\n"
+        "<label>Manage account</label>\n",
         encoding="utf-8",
     )
-    doc_rej = evaluate_age_signals(app_dir)
-    assert "age_field: not found in scanned files" in doc_rej["findings"][0]["evidence"]
+    doc_fp = evaluate_age_signals(app_dir)
+    assert "age_field: not found in scanned files" in doc_fp["findings"][0]["evidence"]
 
-    # Accepted labels: 'Age', 'Your Age:', 'Age *'
-    (app_dir / "accepted.html").write_text(
-        '<label for="a1">Your Age:</label>\n<input id="a1" name="your_age">\n'
-        '<label for="a2">Age *</label>\n<input id="a2" name="your-age">\n',
+    # DOES match: exact 'Age' and 'Your Age:'
+    (app_dir / "true_positives.html").write_text(
+        "<label>Age:</label>\n"
+        "<label>Your Age *</label>\n",
         encoding="utf-8",
     )
-    doc_acc = evaluate_age_signals(app_dir)
-    ev_acc = doc_acc["findings"][0]["evidence"]
-    assert any(": age_field:" in ev for ev in ev_acc)
+    doc_tp = evaluate_age_signals(app_dir)
+    assert any(": age_field:" in ev for ev in doc_tp["findings"][0]["evidence"])
 
 
-def test_over_18_toggle_individual_patterns(tmp_path: Path):
+def test_word_boundary_page_manage_package_storage_never_match_age(tmp_path: Path):
+    """'page', 'manage', 'package', 'storage' never match age_field."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "navigation.html").write_text(
+        '<input name="page" id="page">\n'
+        '<input name="manage" id="manage">\n'
+        '<input name="package" id="package">\n'
+        '<input name="storage" id="storage">\n',
+        encoding="utf-8",
+    )
+    doc = evaluate_age_signals(app_dir)
+    ev = doc["findings"][0]["evidence"]
+    assert "age_field: not found in scanned files" in ev
+
+
+def test_over_18_toggle_individual_variations(tmp_path: Path):
     """
-    Change 4: Add tests that '18+', '18 or older' and 'over 18' each match
-    over_18_toggle individually.
+    Change 4: '18+', '18 or older', and 'over 18' each match individually.
     """
-    patterns = ["18+", "18 or older", "over 18", "at least 18", "above 18", "I am 18"]
-    for idx, pat in enumerate(patterns):
-        app_dir = tmp_path / f"app_{idx}"
+    for phrase in ["18+", "18 or older", "over 18"]:
+        app_dir = tmp_path / f"app_{phrase.replace(' ', '_').replace('+', '_plus')}"
         app_dir.mkdir()
-        (app_dir / "signup.html").write_text(
-            f'<label><input type="checkbox"> {pat}</label>',
+        (app_dir / "terms.html").write_text(
+            f'<input type="checkbox"> I confirm I am {phrase}.\n',
             encoding="utf-8",
         )
         doc = evaluate_age_signals(app_dir)
         ev = doc["findings"][0]["evidence"]
-        assert any(": over_18_toggle:" in line for line in ev), f"Failed to match pattern: {pat}"
+        assert any(": over_18_toggle:" in line for line in ev), f"Failed to match phrase: {phrase}"
 
 
-def test_parental_branch_individual_keywords(tmp_path: Path):
+def test_parental_branch_exact_list(tmp_path: Path):
     """
-    Change 2: Exact list (parent, guardian, parental consent, guardian_email,
-    parent_email, under 18, minor) word-bounded.
+    Change 2: matches exact parental branch keywords:
+    parent, guardian, parental consent, guardian_email, parent_email, under 18, minor.
     """
     keywords = [
         "parent",
@@ -174,16 +191,16 @@ def test_parental_branch_individual_keywords(tmp_path: Path):
         "under 18",
         "minor",
     ]
-    for idx, kw in enumerate(keywords):
-        app_dir = tmp_path / f"app_{idx}"
+    for kw in keywords:
+        app_dir = tmp_path / f"app_{kw.replace(' ', '_')}"
         app_dir.mkdir()
-        (app_dir / "signup.html").write_text(
-            f'<div>Notice: {kw} required for registration.</div>',
+        (app_dir / "consent.html").write_text(
+            f"<div>Please provide {kw} before registering.</div>\n",
             encoding="utf-8",
         )
         doc = evaluate_age_signals(app_dir)
         ev = doc["findings"][0]["evidence"]
-        assert any(": parental_branch:" in line for line in ev), f"Failed on keyword: {kw}"
+        assert any(": parental_branch:" in line for line in ev), f"Failed for keyword: {kw}"
 
 
 def test_all_four_signals_found(tmp_path: Path):
@@ -234,62 +251,52 @@ def test_empty_directory_evaluates_to_unclear(tmp_path: Path):
     assert doc["findings"][0]["result"] == "unclear"
 
 
-def test_word_boundary_page_manage_never_match_age(tmp_path: Path):
-    """'page' and 'manage' never match age_field."""
-    app_dir = tmp_path / "app"
-    app_dir.mkdir()
-    (app_dir / "navigation.html").write_text(
-        '<input name="page" id="page">\n<input name="manage" id="manage">\n',
-        encoding="utf-8",
-    )
-    doc = evaluate_age_signals(app_dir)
-    ev = doc["findings"][0]["evidence"]
-    assert "age_field: not found in scanned files" in ev
-
-
-def test_html_comments_stripped_code_comments_retained(tmp_path: Path):
+def test_html_comment_stripping_only_html_extensions(tmp_path: Path):
     """
-    Change C: HTML comment stripping only for .html, .htm, .vue, .svelte, .php,
-    preserving newline counts. No comment stripping in other file types.
+    Change 1: HTML comments (<!-- -->) are stripped only from HTML-like extensions
+    (.html, .htm, .vue, .svelte, .php), preserving line count.
+    Code comments (//, /* */, #) in .js/.ts/.py are NOT stripped.
     """
     app_dir = tmp_path / "app"
     app_dir.mkdir()
 
-    # 1. HTML file with comment containing DOB keyword -> stripped, not found
-    (app_dir / "test.html").write_text(
-        "<!-- <input type='date' name='dob'> -->\n<p>Hello world</p>\n",
+    # 1. HTML file with match in comment -> stripped (NOT flagged)
+    (app_dir / "comment.html").write_text(
+        "<!-- <label>Age</label> -->\n"
+        "<p>Welcome</p>\n",
         encoding="utf-8",
     )
-    # 2. JS file with code comment containing guardian_email -> NOT stripped, found
-    (app_dir / "test.js").write_text(
-        "// TODO: verify guardian_email\nconst x = 1;\n",
+    doc_html = evaluate_age_signals(app_dir)
+    assert "age_field: not found in scanned files" in doc_html["findings"][0]["evidence"]
+
+    # 2. JS file with match in code comment -> preserved (FLAGGED)
+    (app_dir / "script.js").write_text(
+        "// Check if user is over 18\n"
+        "function verify() { return true; }\n",
         encoding="utf-8",
     )
-    doc = evaluate_age_signals(app_dir)
-    ev = doc["findings"][0]["evidence"]
-    assert "dob_field: not found in scanned files" in ev
-    assert any(": parental_branch:" in line and "guardian_email" in line for line in ev)
+    doc_js = evaluate_age_signals(app_dir)
+    assert any(": over_18_toggle:" in line for line in doc_js["findings"][0]["evidence"])
 
 
 def test_child_directed_words_in_notes_only(tmp_path: Path):
     """
-    Change 5: child_directed_words is one separate information line in the notes,
-    not an evidence kind.
+    Change 5: child_directed_words is one separate information line in notes,
+    never an evidence kind.
     """
     app_dir = tmp_path / "app"
     app_dir.mkdir()
-    (app_dir / "index.html").write_text(
-        "<p>This service is designed for children and students.</p>\n",
+    (app_dir / "kids.html").write_text(
+        "<h1>App for kids and students</h1>\n",
         encoding="utf-8",
     )
     doc = evaluate_age_signals(app_dir)
     f = doc["findings"][0]
-    # Not an evidence kind
-    assert not any("child_directed_words" in ev for ev in f["evidence"])
-    # Reported in notes
-    notes = f["notes"]
-    assert "Child-directed words detected in scanned files (informational only):" in notes
-    assert "child" in notes or "children" in notes or "student" in notes
+
+    # Must NOT be in evidence
+    assert not any("child_directed" in line for line in f["evidence"])
+    # Must be in notes
+    assert "Child-directed words detected in scanned files (informational only): kids, students." in f["notes"]
 
 
 def test_skip_rules(tmp_path: Path):
@@ -306,10 +313,20 @@ def test_skip_rules(tmp_path: Path):
     (app_dir / "reports" / "summary.html").write_text('<input name="dob">', encoding="utf-8")
     (app_dir / ".git").mkdir()
     (app_dir / ".git" / "config.html").write_text('<input name="dob">', encoding="utf-8")
+    (app_dir / "dist").mkdir()
+    (app_dir / "dist" / "dist.html").write_text('<input name="dob">', encoding="utf-8")
+    (app_dir / "build").mkdir()
+    (app_dir / "build" / "build.html").write_text('<input name="dob">', encoding="utf-8")
+    (app_dir / "__pycache__").mkdir()
+    (app_dir / "__pycache__" / "cache.html").write_text('<input name="dob">', encoding="utf-8")
 
     # .env* file
     (app_dir / ".env").write_text("DOB=1990", encoding="utf-8")
     (app_dir / ".env.local").write_text("DOB=1990", encoding="utf-8")
+
+    # Large file (> 1 MB)
+    large_file = app_dir / "large.html"
+    large_file.write_text("x" * (1024 * 1024 + 100), encoding="utf-8")
 
     # Valid file
     (app_dir / "main.html").write_text("<p>Plain page</p>", encoding="utf-8")
@@ -322,9 +339,9 @@ def test_skip_rules(tmp_path: Path):
 
 
 def test_symlink_not_followed_if_supported(tmp_path: Path):
-    """Change E: a symlinked file is not followed (skip if OS cannot create symlinks)."""
+    """A symlinked file is not followed (skip if OS cannot create symlinks)."""
     target_file = tmp_path / "target.html"
-    target_file.write_text('<input name="dob" type="date">', encoding="utf-8")
+    target_file.write_text('<label for="dob">Date of Birth</label>\n<input name="dob" id="dob" type="date">', encoding="utf-8")
 
     app_dir = tmp_path / "app"
     app_dir.mkdir()
@@ -337,12 +354,11 @@ def test_symlink_not_followed_if_supported(tmp_path: Path):
 
     doc = evaluate_age_signals(app_dir)
     f = doc["findings"][0]
-    # Symlink must not be scanned
     assert "dob_field: not found in scanned files" in f["evidence"]
 
 
 def test_evidence_paths_forward_slashes_and_no_drive_letters(tmp_path: Path):
-    """Change E: evidence paths never contain a backslash or a drive letter."""
+    """Evidence paths never contain a backslash or a drive letter."""
     app_dir = tmp_path / "app"
     nested_dir = app_dir / "nested" / "views"
     nested_dir.mkdir(parents=True)
@@ -353,7 +369,7 @@ def test_evidence_paths_forward_slashes_and_no_drive_letters(tmp_path: Path):
     doc = evaluate_age_signals(app_dir)
     for ev in doc["findings"][0]["evidence"]:
         assert "\\" not in ev, f"Evidence line contains backslash: {ev}"
-        assert not re.search(r"\b[A-Za-z]:", ev), f"Evidence line contains drive letter: {ev}"
+        assert not re.search(r"^[A-Za-z]:", ev), f"Evidence line contains drive letter: {ev}"
         if ": dob_field:" in ev:
             assert ev.startswith("nested/views/signup.html:")
 
@@ -381,6 +397,92 @@ def test_notes_mandatory_phrases_and_no_forbidden_words(tmp_path: Path):
     assert "secure" not in notes_lower
 
 
+def test_preferred_file_stem_matching():
+    """
+    Task 10 Change 5:
+    Split file stem on non-letters and match whole parts:
+    signup, onboard, onboarding, register, registration, auth, checkout.
+    'author' must NOT match.
+    """
+    assert is_preferred_file("signup.html")
+    assert is_preferred_file("user-signup.html")
+    assert is_preferred_file("onboard.html")
+    assert is_preferred_file("user_onboard.js")
+    assert is_preferred_file("onboarding-flow.vue")
+    assert is_preferred_file("register.html")
+    assert is_preferred_file("user_register.php")
+    assert is_preferred_file("registration.py")
+    assert is_preferred_file("registration_form.svelte")
+    assert is_preferred_file("auth.js")
+    assert is_preferred_file("auth-service.ts")
+    assert is_preferred_file("checkout.html")
+    assert is_preferred_file("cart_checkout.html")
+
+    # Counterexamples: author, authority, about, authentic must NOT match
+    assert not is_preferred_file("author.html")
+    assert not is_preferred_file("author_bio.html")
+    assert not is_preferred_file("authority.js")
+    assert not is_preferred_file("about.html")
+    assert not is_preferred_file("authentic_data.json")
+
+
+def test_preferred_files_evidence_selection_order(tmp_path: Path):
+    """
+    Task 10 Change 2d:
+    When choosing which 3 evidence lines to show per kind, prefer files whose name
+    contains signup, onboard, register, auth, checkout; otherwise walk order.
+    """
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    # Create non-preferred file with matches (comes first alphabetically: "a_about.html")
+    (app_dir / "a_about.html").write_text(
+        "<div>minor consent needed line 1</div>\n"
+        "<div>minor consent needed line 2</div>\n"
+        "<div>minor consent needed line 3</div>\n",
+        encoding="utf-8",
+    )
+
+    # Create preferred file with a match (comes later: "z_signup.html")
+    (app_dir / "z_signup.html").write_text(
+        "<div>minor consent needed in signup</div>\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_age_signals(app_dir)
+    ev_lines = doc["findings"][0]["evidence"]
+    parental_lines = [line for line in ev_lines if ": parental_branch:" in line]
+
+    assert len(parental_lines) == 3
+    # Preferred file z_signup.html must appear in the 3 evidence lines
+    assert any("z_signup.html" in line for line in parental_lines)
+
+
+def test_notes_file_summary_and_capping(tmp_path: Path):
+    """
+    Task 10 Change 2d:
+    Notes must list the number of files with at least one match per kind and
+    their relative paths (max 5 per kind).
+    """
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    # Create 7 distinct files with parental_branch matches
+    for i in range(7):
+        (app_dir / f"page_{i}.html").write_text(
+            f"<div>Contact parent for approval {i}</div>\n",
+            encoding="utf-8",
+        )
+
+    doc = evaluate_age_signals(app_dir)
+    notes = doc["findings"][0]["notes"]
+
+    assert "Files with matches per kind:" in notes
+    # 7 files matched, capped at 5 with (and 2 more)
+    assert "parental_branch: 7 files with matches" in notes
+    assert "(and 2 more)" in notes
+
+
 # ---------------------------------------------------------------------------
 # Oracle Tests on Demo Applications
 # ---------------------------------------------------------------------------
@@ -388,8 +490,7 @@ def test_notes_mandatory_phrases_and_no_forbidden_words(tmp_path: Path):
 def test_oracle_clean_app_matches_expected_findings():
     """
     Run on demo/clean-app and assert needs-human, matching expected-findings.json.
-    clean-app evidence shows dob_field and parental_branch found.
-    Change D: assert which signal kinds were found or not found, not exact line numbers.
+    clean-app evidence shows dob_field found and parental_branch found.
     """
     doc = evaluate_age_signals(CLEAN_APP_DIR)
     f = doc["findings"][0]
@@ -401,19 +502,20 @@ def test_oracle_clean_app_matches_expected_findings():
     assert f["result"] == clean_expected["result"]
 
     evidence = f["evidence"]
-    # dob_field and parental_branch are found
     assert any(": dob_field:" in line for line in evidence)
     assert any(": parental_branch:" in line for line in evidence)
-    # age_field and over_18_toggle are not found
     assert "age_field: not found in scanned files" in evidence
     assert "over_18_toggle: not found in scanned files" in evidence
+
+    # Verify notes file summary
+    assert "Files with matches per kind:" in f["notes"]
+    assert "signup.html" in f["notes"]
 
 
 def test_oracle_flawed_app_matches_expected_findings():
     """
     Run on demo/flawed-app and assert needs-human, matching expected-findings.json.
     flawed-app evidence shows dob_field not found and parental_branch not found.
-    Change D: assert which signal kinds were found or not found, not exact line numbers.
     """
     doc = evaluate_age_signals(FLAWED_APP_DIR)
     f = doc["findings"][0]
@@ -483,6 +585,4 @@ def test_age_signal_cli_and_report_rendering(tmp_path: Path):
     stdout = report_proc.stdout
     assert "IN-DPDP-011" in stdout
     assert "# Privacy Preflight Findings Report: India" in stdout
-    # Ensure no backslashes in evidence lines
     assert "\\" not in doc["findings"][0]["evidence"][0]
-

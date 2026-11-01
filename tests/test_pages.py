@@ -31,12 +31,15 @@ from typing import Any, Dict, Generator, List
 
 import pytest
 
+import datetime
+
 WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 if str(WORKSPACE_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKSPACE_ROOT))
 
 from scripts.crawl import crawl_site
-from scripts.pages import evaluate_pages, extract_named_grievance_officer
+from scripts.pages import check_r4_elements, evaluate_pages, extract_named_grievance_officer
+from scripts.report import generate_report
 
 DEMO_DIR = WORKSPACE_ROOT / "demo"
 FLAWED_APP_DIR = DEMO_DIR / "flawed-app"
@@ -366,7 +369,7 @@ def test_boundary_spdi_001_four_out_of_five_elements_unclear():
     res = evaluate_pages(crawl_data)
     f = {item["check_id"]: item for item in res["findings"]}["IN-SPDI-001"]
     assert f["result"] == "unclear"
-    assert "disclosure" in f["evidence"][0]
+    assert any("disclosure" in ev for ev in f["evidence"])
 
 
 def test_boundary_spdi_001_role_only_officer_unclear():
@@ -394,7 +397,7 @@ def test_boundary_spdi_001_role_only_officer_unclear():
     res = evaluate_pages(crawl_data)
     f = {item["check_id"]: item for item in res["findings"]}["IN-SPDI-001"]
     assert f["result"] == "unclear"
-    assert "lacks explicit name" in f["evidence"][0]
+    assert any("lacks explicit name" in ev for ev in f["evidence"])
 
 
 def test_boundary_webform_only_contact_not_met():
@@ -531,7 +534,7 @@ def test_boundary_spdi_001_title_only_privacy_policy_does_not_count_practices():
     res = evaluate_pages(crawl_data)
     f = {item["check_id"]: item for item in res["findings"]}["IN-SPDI-001"]
     assert f["result"] == "unclear"
-    assert "practices" in f["evidence"][0]
+    assert any("practices" in ev for ev in f["evidence"])
 
 
 def test_name_placeholders_rejected():
@@ -803,3 +806,266 @@ def test_pages_cli_and_report_rendering(clean_server: str, tmp_path: Path):
     assert "IN-DPDP-009" in stdout
     assert "IN-DPDP-010" in stdout
     assert "IN-SPDI-001" in stdout
+
+
+# ---------------------------------------------------------------------------
+# Privacy Page Fallback and SPDI-001 Matcher Refinement Tests
+# ---------------------------------------------------------------------------
+
+def test_fallback_rights_heading_unclear():
+    """Privacy page with 'Your Rights' heading -> IN-DPDP-009 unclear, names URL, confidence: medium."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\nYour Rights\nDetails about our service.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+    assert f["result"] == "unclear"
+    assert "/privacy.html" in f["evidence"][0]
+    assert f.get("confidence") == "medium"
+
+
+def test_fallback_rights_no_topic_words_not_met():
+    """Privacy page with no topic words -> IN-DPDP-009 not-met, notes contain fallback sentence."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\nGeneral terms and company overview.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+    assert f["result"] == "not-met"
+    assert "The privacy policy page was also checked by keyword; no matching topics were found." in f["notes"]
+    assert f.get("confidence") == "medium"
+
+
+def test_no_privacy_page_not_met_classification_note():
+    """No privacy page -> IN-DPDP-009 not-met, notes contain classification sentence."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/index.html",
+                "title": "Home",
+                "text": "Welcome to our website.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+    assert f["result"] == "not-met"
+    assert "Pages are classified by URL, title and link text; page content was not searched for pages that were not classified this way." in f["notes"]
+    assert f.get("confidence") == "medium"
+
+
+def test_dedicated_rights_page_wins_over_fallback():
+    """When a dedicated rights page exists, it is evaluated and confidence override is not set."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 2, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\nGeneral info.",
+                "links": [],
+                "consent_controls": [],
+            },
+            {
+                "url": "http://127.0.0.1/rights.html",
+                "title": "Rights",
+                "text": "Submit identity verification. Rights to access, correction, erasure, nomination.",
+                "links": [],
+                "consent_controls": [],
+            },
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+    assert f["result"] == "met"
+    assert "/rights.html" in f["evidence"][0]
+    assert "confidence" not in f
+
+
+def test_incomplete_crawl_keeps_unclear():
+    """Incomplete crawl keeps unclear ('crawl incomplete') for missing pages."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 2, "pages_failed": 1, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/index.html",
+                "title": "Home",
+                "text": "Welcome to our website.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+    assert f["result"] == "unclear"
+    assert "crawl incomplete" in f["evidence"][0]
+    assert "confidence" not in f
+
+
+def test_fallback_grievance_line_unclear():
+    """Privacy page mentioning grievance -> IN-DPDP-010 unclear, confidence: medium."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\nFor any grievance, contact our team.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-010"]
+    assert f["result"] == "unclear"
+    assert "/privacy.html" in f["evidence"][0]
+    assert f.get("confidence") == "medium"
+
+
+def test_purpose_heading_how_we_use_your_information():
+    """Short line 'How We Use Your Information' satisfies Rule 4 purpose element."""
+    text = "Privacy Policy\nHow We Use Your Information\nDetails."
+    elements, missing = check_r4_elements(text)
+    assert elements["purpose"] is True
+
+
+def test_disclosure_heading_third_party_services():
+    """Short line 'Third-Party Services' satisfies Rule 4 disclosure element."""
+    text = "Privacy Policy\nThird-Party Services\nWe use external APIs."
+    elements, missing = check_r4_elements(text)
+    assert elements["disclosure"] is True
+
+
+def test_your_rights_does_not_count_as_practices():
+    """Heading 'Your Rights' does NOT satisfy the practices element."""
+    text = "Privacy Policy\nYour Rights\nDetails."
+    elements, missing = check_r4_elements(text)
+    assert elements["practices"] is False
+
+
+def test_output_contains_no_missing_required_elements():
+    """IN-SPDI-001 output never contains the obsolete phrase 'missing required elements'."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\n1. Information We Collect\n2. Security Practices",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f = {item["check_id"]: item for item in res["findings"]}["IN-SPDI-001"]
+    out_json = json.dumps(f)
+    assert "missing required elements" not in out_json
+    assert "not detected by keyword rules" in out_json
+
+
+def test_all_rights_reserved_does_not_trigger_rights_fallback():
+    """Privacy page whose only rights text is copyright / 'All rights reserved' -> 009 and 002 not-met."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\n© 2026 Example Corp. All rights reserved.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    findings = {item["check_id"]: item for item in res["findings"]}
+    assert findings["IN-DPDP-002"]["result"] == "not-met"
+    assert findings["IN-DPDP-009"]["result"] == "not-met"
+
+
+def test_single_rights_group_without_heading_not_met():
+    """Single statutory group (e.g. 'update' or 'access' alone) without rights heading -> IN-DPDP-009 not-met."""
+    for keyword in ["access", "update"]:
+        crawl_data = {
+            "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+            "pages": [
+                {
+                    "url": "http://127.0.0.1/privacy.html",
+                    "title": "Privacy Policy",
+                    "text": f"Privacy Policy\nYou may {keyword} your account profile settings.",
+                    "links": [],
+                    "consent_controls": [],
+                }
+            ],
+        }
+        res = evaluate_pages(crawl_data)
+        f = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+        assert f["result"] == "not-met", f"Expected not-met for keyword '{keyword}', got {f['result']}"
+
+
+def test_fallback_result_confidence_medium_renders_in_report(tmp_path: Path):
+    """Fallback result carries confidence 'medium' and generate_report renders medium."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\nYour Rights\nSubmit access request and correction details.",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res = evaluate_pages(crawl_data)
+    f009 = {item["check_id"]: item for item in res["findings"]}["IN-DPDP-009"]
+    assert f009["confidence"] == "medium"
+
+    findings_file = tmp_path / "findings.json"
+    findings_file.write_text(json.dumps(res), encoding="utf-8")
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_file,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+    idx = md_report.find("IN-DPDP-009")
+    assert idx != -1
+    section = md_report[idx : idx + 500]
+    assert "- **Confidence:** medium" in section
+
+
+def test_mutation_check_assertion():
+    """Mutation tests must verify that mutated != content."""
+    original = "Privacy Policy\n1. Information We Collect\n2. Security Practices\nDesignated Grievance Officer: Alex Sharma\nEmail: alex@example.test"
+    mutated = original.replace("Security Practices", "Other Topic")
+    assert mutated != original
+    elements_orig, _ = check_r4_elements(original)
+    elements_mut, _ = check_r4_elements(mutated)
+    assert elements_orig["security"] is True
+    assert elements_mut["security"] is False

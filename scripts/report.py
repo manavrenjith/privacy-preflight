@@ -240,6 +240,10 @@ def generate_report(
         status_label, status_cat = compute_check_status(check_def, effective_dates, today)
         heading_label = format_finding_heading(check_def, status_label)
 
+        pack_conf = check_def.get("confidence", "medium")
+        item_conf = item.get("confidence")
+        finding_confidence = item_conf if item_conf in ("high", "medium", "low") else pack_conf
+
         finding_record = {
             "check_id": cid,
             "title": check_def.get("title", ""),
@@ -251,7 +255,7 @@ def generate_report(
             "evidence": ev,
             "suggested_fix": item.get("suggested_fix"),
             "notes": item.get("notes"),
-            "confidence": check_def.get("confidence", "medium"),
+            "confidence": finding_confidence,
             "caveats": check_def.get("caveats", ""),
             "open_question_refs": check_def.get("open_question_refs", []),
             "last_verified": str(check_def.get("last_verified", "")),

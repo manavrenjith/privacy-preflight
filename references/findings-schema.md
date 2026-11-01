@@ -38,6 +38,7 @@ When findings are produced by an automated scanner (e.g. `scripts/crawl.py`), an
 | `evidence` | array of strings | **Yes** | Non-empty list of strings | Direct evidence pointers: source file locations (`file:line`), URLs, network domains, or API routes. |
 | `suggested_fix` | string | No | String | Optional recommendation for engineers or product teams to address the finding. |
 | `notes` | string | No | String | Optional contextual remarks from the evaluator or scanning tool. |
+| `confidence` | string | No | `high` \| `medium` \| `low` | Optional confidence override for the finding. When omitted or invalid, the check definition's default confidence from the pack is used. |
 
 ---
 
@@ -106,6 +107,10 @@ When findings are produced by an automated scanner (e.g. `scripts/crawl.py`), an
         },
         "notes": {
           "type": "string"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
         }
       },
       "additionalProperties": false

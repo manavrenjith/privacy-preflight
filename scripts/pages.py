@@ -166,6 +166,17 @@ def is_same_origin_link(link_url: str, base_url: str) -> bool:
     )
 
 
+def strip_copyright_lines(text: str) -> str:
+    """Strip lines containing copyright notices and 'all rights reserved'."""
+    clean_lines = []
+    for line in text.splitlines():
+        ll = line.lower()
+        if "all rights reserved" in ll or "copyright" in ll or "©" in line or "&copy;" in ll:
+            continue
+        clean_lines.append(line)
+    return "\n".join(clean_lines)
+
+
 def classify_page_kinds(pages: List[Dict[str, Any]]) -> Dict[str, Set[str]]:
     """
     Classify page kinds for every page in crawl.
@@ -260,12 +271,15 @@ def check_r4_elements(text: str) -> Tuple[Dict[str, bool], List[str]]:
                 or "collection and usage" in hl
                 or "why we collect" in hl
                 or re.search(r"\bpurpose\b.{1,30}\b(?:collection|usage|processing)\b", hl)
+                or re.search(r"\bhow\s+we\s+use\b.*?\b(?:information|data|your)\b", hl)
             ):
                 elements_found["purpose"] = True
 
         if not elements_found["disclosure"]:
             if (
                 re.search(r"\bdisclos(?:e|ure|ures)\b", hl)
+                or "third-party" in hl
+                or "third party" in hl
                 or re.search(r"\bsharing\s+(?:of\s+)?(?:personal\s+)?(?:data|information)\b", hl)
                 or re.search(r"\btransfer\s+of\s+(?:personal\s+)?(?:data|information)\b", hl)
             ):
@@ -484,6 +498,8 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
         norm_p = normalize_path(get_url_path(p["url"]))
         pages_by_norm_path.setdefault(norm_p, []).append(p)
 
+    privacy_pages = [p for p in pages if "privacy policy" in page_kinds[p["url"]]]
+
     findings: List[Dict[str, Any]] = []
 
     # -------------------------------------------------------------------------
@@ -500,13 +516,49 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
                 "evidence": ["not found among crawled pages (crawl incomplete)"],
                 "notes": f"Notice page not found among crawled pages; {incomplete_crawl_note}. (pages crawled: {pages_crawled})",
             })
+        elif privacy_pages:
+            fb_page = privacy_pages[0]
+            fb_path = get_url_path(fb_page["url"])
+            fb_text = strip_copyright_lines(fb_page.get("text", ""))
+            fb_short_lines = [
+                line.strip() for line in fb_text.splitlines()
+                if 4 <= len(line.strip()) <= 89
+            ]
+            has_notice_heading = any(
+                re.search(r"\b(?:rights?|withdraw(?:al)?)\b", line, re.IGNORECASE)
+                for line in fb_short_lines
+            )
+            has_board = bool(BOARD_COMPLAINT_REGEX.search(fb_text))
+            if has_notice_heading or has_board:
+                matched_signals = []
+                if has_notice_heading:
+                    matched_signals.append("rights or withdrawal short lines")
+                if has_board:
+                    matched_signals.append("complaint to Board")
+                findings.append({
+                    "check_id": "IN-DPDP-002",
+                    "result": "unclear",
+                    "evidence": [f"{fb_path}: notice topics ({', '.join(matched_signals)}) detected in privacy policy content"],
+                    "notes": f"Dedicated notice page not found; privacy policy was checked as fallback and matched notice topics. (pages crawled: {pages_crawled})",
+                    "confidence": "medium",
+                })
+            else:
+                findings.append({
+                    "check_id": "IN-DPDP-002",
+                    "result": "not-met",
+                    "evidence": ["not found among the crawled pages"],
+                    "suggested_fix": "Publish a dedicated data protection notice and link it directly from all consent request screens.",
+                    "notes": f"Notice page not found among the crawled pages. The privacy policy page was also checked by keyword; no matching topics were found. (pages crawled: {pages_crawled})",
+                    "confidence": "medium",
+                })
         else:
             findings.append({
                 "check_id": "IN-DPDP-002",
                 "result": "not-met",
                 "evidence": ["not found among the crawled pages"],
                 "suggested_fix": "Publish a dedicated data protection notice and link it directly from all consent request screens.",
-                "notes": f"Notice page not found among the crawled pages. (pages crawled: {pages_crawled})",
+                "notes": f"Notice page not found among the crawled pages. Pages are classified by URL, title and link text; page content was not searched for pages that were not classified this way. (pages crawled: {pages_crawled})",
+                "confidence": "medium",
             })
     else:
         # Check each notice page candidates
@@ -664,13 +716,48 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
                 "evidence": ["not found among crawled pages (crawl incomplete)"],
                 "notes": f"Rights page not found among crawled pages; {incomplete_crawl_note}. (pages crawled: {pages_crawled})",
             })
+        elif privacy_pages:
+            fb_page = privacy_pages[0]
+            fb_path = get_url_path(fb_page["url"])
+            fb_text = strip_copyright_lines(fb_page.get("text", ""))
+            fb_short_lines = [
+                line.strip() for line in fb_text.splitlines()
+                if 4 <= len(line.strip()) <= 89
+            ]
+            has_rights_heading = any(
+                re.search(r"\brights?\b", line, re.IGNORECASE)
+                for line in fb_short_lines
+            )
+            matched_groups = [
+                g_name for g_name, g_regex in RIGHTS_GROUPS.items()
+                if g_regex.search(fb_text)
+            ]
+            if has_rights_heading or len(matched_groups) >= 2:
+                matched_desc = f"matched: {', '.join(matched_groups)}" if matched_groups else "rights heading"
+                findings.append({
+                    "check_id": "IN-DPDP-009",
+                    "result": "unclear",
+                    "evidence": [f"{fb_path}: data principal rights topics detected in privacy policy content ({matched_desc})"],
+                    "notes": f"Dedicated rights page not found; privacy policy was checked as fallback and matched rights topics ({', '.join(matched_groups) if matched_groups else 'rights heading'}). (pages crawled: {pages_crawled})",
+                    "confidence": "medium",
+                })
+            else:
+                findings.append({
+                    "check_id": "IN-DPDP-009",
+                    "result": "not-met",
+                    "evidence": ["not found among the crawled pages"],
+                    "suggested_fix": "Provide a dedicated rights portal or page covering access, correction, erasure, and nomination with authentication requirements.",
+                    "notes": f"Rights page not found among the crawled pages. The privacy policy page was also checked by keyword; no matching topics were found. (pages crawled: {pages_crawled})",
+                    "confidence": "medium",
+                })
         else:
             findings.append({
                 "check_id": "IN-DPDP-009",
                 "result": "not-met",
                 "evidence": ["not found among the crawled pages"],
                 "suggested_fix": "Provide a dedicated rights portal or page covering access, correction, erasure, and nomination with authentication requirements.",
-                "notes": f"Rights page not found among the crawled pages. (pages crawled: {pages_crawled})",
+                "notes": f"Rights page not found among the crawled pages. Pages are classified by URL, title and link text; page content was not searched for pages that were not classified this way. (pages crawled: {pages_crawled})",
+                "confidence": "medium",
             })
     else:
         best_result = "not-met"
@@ -736,13 +823,36 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
                 "evidence": ["not found among crawled pages (crawl incomplete)"],
                 "notes": f"Grievance redressal page not found among crawled pages; {incomplete_crawl_note}. {dual_clock_note} (pages crawled: {pages_crawled})",
             })
+        elif privacy_pages:
+            fb_page = privacy_pages[0]
+            fb_path = get_url_path(fb_page["url"])
+            fb_text = strip_copyright_lines(fb_page.get("text", ""))
+            has_grievance = ("grievance" in fb_text.lower() or "redress" in fb_text.lower())
+            if has_grievance:
+                findings.append({
+                    "check_id": "IN-DPDP-010",
+                    "result": "unclear",
+                    "evidence": [f"{fb_path}: grievance/redressal keywords detected in privacy policy content"],
+                    "notes": f"Dedicated grievance page not found; privacy policy was checked as fallback and mentions grievance or redressal topics. {dual_clock_note} (pages crawled: {pages_crawled})",
+                    "confidence": "medium",
+                })
+            else:
+                findings.append({
+                    "check_id": "IN-DPDP-010",
+                    "result": "not-met",
+                    "evidence": ["not found among the crawled pages"],
+                    "suggested_fix": "Publish an internal grievance redressal mechanism specifying a response timeline (stricter benchmark: one month).",
+                    "notes": f"Grievance redressal page not found among the crawled pages. The privacy policy page was also checked by keyword; no matching topics were found. {dual_clock_note} (pages crawled: {pages_crawled})",
+                    "confidence": "medium",
+                })
         else:
             findings.append({
                 "check_id": "IN-DPDP-010",
                 "result": "not-met",
                 "evidence": ["not found among the crawled pages"],
                 "suggested_fix": "Publish an internal grievance redressal mechanism specifying a response timeline (stricter benchmark: one month).",
-                "notes": f"Grievance redressal page not found among the crawled pages. {dual_clock_note} (pages crawled: {pages_crawled})",
+                "notes": f"Grievance redressal page not found among the crawled pages. Pages are classified by URL, title and link text; page content was not searched for pages that were not classified this way. {dual_clock_note} (pages crawled: {pages_crawled})",
+                "confidence": "medium",
             })
     else:
         best_result = "unclear"
@@ -796,7 +906,8 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
                 "result": "not-met",
                 "evidence": ["not found among the crawled pages"],
                 "suggested_fix": "Publish a privacy policy covering the five Rule 4 elements and designate a named Grievance Officer with working contact information.",
-                "notes": f"Privacy policy not found among the crawled pages. (pages crawled: {pages_crawled})",
+                "notes": f"Privacy policy not found among the crawled pages. Pages are classified by URL, title and link text; page content was not searched for pages that were not classified this way. (pages crawled: {pages_crawled})",
+                "confidence": "medium",
             })
     else:
         best_result = "not-met"
@@ -813,33 +924,39 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
             all_elems_present = len(missing_elems) == 0
             officer_present = officer_info is not None
 
+            # Path-first evidence for elements and officer
+            r4_order = ["practices", "data_types", "purpose", "disclosure", "security"]
+            elem_status = [
+                f"{e} (detected)" if elements_found[e] else f"{e} (not detected by keyword rules)"
+                for e in r4_order
+            ]
+            elem_ev = f"{pp_path}: Rule 4 elements: {', '.join(elem_status)}"
+
+            if officer_present:
+                officer_ev = f"{pp_path}: designated Grievance Officer '{officer_info[0]}' with contact '{officer_info[1]}'"
+            elif "grievance officer" in pp_text.lower():
+                officer_ev = f"{pp_path}: Grievance Officer lacks explicit name or contact details (not detected by keyword rules)"
+            else:
+                officer_ev = f"{pp_path}: designated Grievance Officer (not detected by keyword rules)"
+
             if all_elems_present and officer_present:
                 officer_name, officer_contact = officer_info
                 best_result = "met"
                 best_ev = [
                     f"{pp_path}: covers practices, data types, purpose, disclosure, and security",
-                    f"{pp_path}: designated Grievance Officer '{officer_name}' with contact '{officer_contact}'",
+                    officer_ev,
                 ]
-                best_notes = f"Privacy policy published covering all five Rule 4 elements with a designated named Grievance Officer and contact details. (pages crawled: {pages_crawled})"
+                best_notes = f"Privacy policy published covering all five Rule 4 elements with a designated named Grievance Officer and contact details. Elements checked by keyword presence signals; not a judgment of adequacy. (pages crawled: {pages_crawled})"
                 break
             elif any(elements_found.values()) or "grievance officer" in pp_text.lower():
                 if best_result != "met":
                     best_result = "unclear"
-                    missing_parts = []
-                    if missing_elems:
-                        missing_parts.append(f"Rule 4 elements ({', '.join(missing_elems)})")
-                    if not officer_present:
-                        if "grievance officer" in pp_text.lower():
-                            missing_parts.append("Grievance Officer lacks explicit name or contact details")
-                        else:
-                            missing_parts.append("designated Grievance Officer")
-
-                    best_ev = [f"{pp_path}: missing required elements ({'; '.join(missing_parts)})"]
-                    best_notes = f"Privacy policy found but missing required Rule 4 elements or named officer: {', '.join(missing_parts)}. (pages crawled: {pages_crawled})"
+                    best_ev = [elem_ev, officer_ev]
+                    best_notes = f"Privacy policy found; some elements or designated officer not detected by keyword rules. Elements checked by keyword presence signals; not a judgment of adequacy. (pages crawled: {pages_crawled})"
             else:
                 if best_result == "not-met":
-                    best_ev = [f"{pp_path}: none of the Rule 4 elements or named officer were found"]
-                    best_notes = f"Privacy policy found but none of the required Rule 4 elements or officer were found. (pages crawled: {pages_crawled})"
+                    best_ev = [elem_ev, officer_ev]
+                    best_notes = f"Privacy policy found but Rule 4 elements and designated officer not detected by keyword rules. Elements checked by keyword presence signals; not a judgment of adequacy. (pages crawled: {pages_crawled})"
 
         findings.append({
             "check_id": "IN-SPDI-001",

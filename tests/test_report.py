@@ -721,4 +721,64 @@ def test_report_best_practice_section_shows_informational_advisories(tmp_path: P
     assert "IN-BP-003" not in [f["check_id"] for f in json_report["sections"]["informational_inventory"]]
 
 
+def test_report_finding_confidence_override(tmp_path: Path):
+    """Report uses finding item's confidence if low/medium/high; otherwise pack value; invalid is ignored."""
+    findings_file = tmp_path / "findings_conf.json"
+    # IN-DPDP-002 pack confidence is high
+    findings_content = {
+        "findings": [
+            {
+                "check_id": "IN-DPDP-002",
+                "result": "unclear",
+                "evidence": ["https://example.test/privacy: fallback matched"],
+                "confidence": "medium",  # override high with medium
+            },
+            {
+                "check_id": "IN-DPDP-008",
+                "result": "met",
+                "evidence": ["https://example.test/signup: contact found"],
+                # no confidence -> should use pack confidence (high)
+            },
+            {
+                "check_id": "IN-DPDP-009",
+                "result": "not-met",
+                "evidence": ["not found among the crawled pages"],
+                "confidence": "super-high",  # invalid -> should ignore and use pack confidence (medium)
+            },
+        ]
+    }
+    findings_file.write_text(json.dumps(findings_content), encoding="utf-8")
+
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_file,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    all_findings = []
+    for section in json_report["sections"].values():
+        all_findings.extend(section)
+    f_by_id = {f["check_id"]: f for f in all_findings}
+
+    # 1. override used
+    assert f_by_id["IN-DPDP-002"]["confidence"] == "medium"
+    idx_002 = md_report.find("IN-DPDP-002")
+    assert idx_002 != -1
+    section_002 = md_report[idx_002 : idx_002 + 500]
+    assert "- **Confidence:** medium" in section_002
+
+    # 2. no override falls back to pack (IN-DPDP-008 has confidence: high in india.md)
+    assert f_by_id["IN-DPDP-008"]["confidence"] == "high"
+    idx_008 = md_report.find("IN-DPDP-008")
+    assert idx_008 != -1
+    section_008 = md_report[idx_008 : idx_008 + 500]
+    assert "- **Confidence:** high" in section_008
+
+    # 3. invalid confidence ignored, falls back to pack (IN-DPDP-009 has confidence: medium in india.md)
+    assert f_by_id["IN-DPDP-009"]["confidence"] == "medium"
+    assert "super-high" not in md_report
+
+
 

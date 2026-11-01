@@ -35,6 +35,26 @@ STATIC_ASSET_TYPES = {"stylesheet", "script", "font", "image", "media"}
 STATIC_ASSET_EXTS = {".css", ".js", ".woff", ".woff2", ".ttf", ".eot", ".otf", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico"}
 EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 
+# Group 1: Explicit allowlist of known static asset CDN / font host domains (or domain suffixes)
+SELF_HOSTABLE_STATIC_HOSTS = {
+    "fonts.googleapis.com",
+    "fonts.gstatic.com",
+    "cdnjs.cloudflare.com",
+    "cdn.jsdelivr.net",
+    "unpkg.com",
+    "stackpath.bootstrapcdn.com",
+    "maxcdn.bootstrapcdn.com",
+}
+
+
+def is_self_hostable_cdn(domain: str) -> bool:
+    """Check if domain matches the explicit static asset CDN / font provider allowlist."""
+    d = domain.lower().split(":")[0]
+    for allowed in SELF_HOSTABLE_STATIC_HOSTS:
+        if d == allowed or d.endswith("." + allowed):
+            return True
+    return False
+
 
 def is_local_host(hostname: str) -> bool:
     """Determine if a hostname is local or a test fixture."""
@@ -465,18 +485,51 @@ def generate_findings(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
         or any(urllib.parse.urlparse(r.get("url", "")).path.lower().endswith(ext) for ext in STATIC_ASSET_EXTS)
     ]
 
-    if external_static_reqs:
-        bp_001_evidence = sorted(list({
-            f"{r['domain']} ({r['resource_type']}): {r['url']}"
-            for r in external_static_reqs
-        }))
-        findings.append({
+    group1_reqs = []
+    group2_reqs = []
+    for r in external_static_reqs:
+        rtype = r.get("resource_type", "")
+        url_path = urllib.parse.urlparse(r.get("url", "")).path.lower()
+        is_stylesheet_or_font = (
+            rtype in ("stylesheet", "font")
+            or any(url_path.endswith(ext) for ext in [".css", ".woff", ".woff2", ".ttf", ".eot", ".otf"])
+        )
+        if is_stylesheet_or_font or is_self_hostable_cdn(r.get("domain", "")):
+            group1_reqs.append(r)
+        else:
+            group2_reqs.append(r)
+
+    if group1_reqs or group2_reqs:
+        bp_001_evidence_set = set()
+        for r in group1_reqs:
+            bp_001_evidence_set.add(f"{r['domain']} ({r['resource_type']}): {r['url']}")
+        for r in group2_reqs:
+            bp_001_evidence_set.add(f"{r['domain']} ({r['resource_type']} loaded from provider): {r['url']}")
+        bp_001_evidence = sorted(list(bp_001_evidence_set))
+
+        group1_hosts = sorted(list({r["domain"] for r in group1_reqs}))
+        finding: Dict[str, Any] = {
             "check_id": "IN-BP-001",
             "result": "informational",
             "evidence": bp_001_evidence,
-            "suggested_fix": "Self-host static assets (fonts, scripts, and CDNs) locally to avoid transmitting visitor IP addresses to third parties.",
-            "notes": f"External static assets detected. Recommendation: self-host static assets.{coverage_suffix}",
-        })
+            "confidence": "medium",
+        }
+        if group1_hosts:
+            finding["suggested_fix"] = (
+                f"Self-host these static assets to avoid sending visitor IP addresses to their hosts: {', '.join(group1_hosts)}"
+            )
+
+        if group1_reqs and not group2_reqs:
+            finding["notes"] = f"External static assets detected. Recommendation: self-host static assets.{coverage_suffix}"
+        elif group2_reqs and not group1_reqs:
+            finding["notes"] = f"Scripts from third-party providers are listed for the inventory; whether they can be self-hosted depends on the provider. No self-hosting advice given.{coverage_suffix}"
+        else:
+            finding["notes"] = (
+                f"External static assets detected. Recommendation: self-host static assets. "
+                f"Scripts from third-party providers are listed for the inventory; "
+                f"whether they can be self-hosted depends on the provider. No self-hosting advice given.{coverage_suffix}"
+            )
+        findings.append(finding)
     else:
         findings.append({
             "check_id": "IN-BP-001",
@@ -540,11 +593,12 @@ def generate_findings(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
         bp_002_evidence = [f"{p['url']} (depth: {p['depth']})" for p in matched_pages]
 
         if min_contact_depth <= 2:
+            click_word = "click" if min_contact_depth == 1 else "clicks"
             findings.append({
                 "check_id": "IN-BP-002",
                 "result": "met",
                 "evidence": bp_002_evidence,
-                "notes": f"Contact details reachable within {min_contact_depth} clicks from start page.{coverage_suffix}",
+                "notes": f"Contact details reachable within {min_contact_depth} {click_word} from start page.{coverage_suffix}",
             })
         else:
             findings.append({

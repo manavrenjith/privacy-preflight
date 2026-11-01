@@ -471,3 +471,212 @@ def test_crawl_cli_default_paths() -> None:
 def datetime_date(year: int, month: int, day: int):
     import datetime
     return datetime.date(year, month, day)
+
+
+# ---------------------------------------------------------------------------
+# IN-BP-001 Static Asset Splitting and IN-BP-002 Click Depth Notes Tests
+# ---------------------------------------------------------------------------
+
+from scripts.crawl import generate_findings, is_self_hostable_cdn
+from scripts.report import generate_report
+
+
+def test_bp_001_stylesheet_only_advises_self_host():
+    """Stylesheet from external host is Group 1 and advises self-hosting naming the host."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [{"url": "http://127.0.0.1/", "consent_controls": []}],
+        "external_requests": [
+            {
+                "domain": "custom-cdn.example.org",
+                "url": "https://custom-cdn.example.org/theme.css",
+                "resource_type": "stylesheet",
+            }
+        ],
+        "summary": {},
+    }
+    findings_map = {f["check_id"]: f for f in generate_findings(crawl_data)["findings"]}
+    f = findings_map["IN-BP-001"]
+    assert f["result"] == "informational"
+    assert f["confidence"] == "medium"
+    assert f["suggested_fix"] == "Self-host these static assets to avoid sending visitor IP addresses to their hosts: custom-cdn.example.org"
+    assert f["evidence"] == ["custom-cdn.example.org (stylesheet): https://custom-cdn.example.org/theme.css"]
+    assert "External static assets detected. Recommendation: self-host static assets." in f["notes"]
+    assert "Scripts from third-party providers are listed for the inventory" not in f["notes"]
+
+
+def test_bp_001_provider_script_only_no_suggested_fix():
+    """External script from unlisted host is Group 2; suggested_fix is omitted and provider note is present."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [{"url": "http://127.0.0.1/", "consent_controls": []}],
+        "external_requests": [
+            {
+                "domain": "js.stripe.com",
+                "url": "https://js.stripe.com/v3/buy-button.js",
+                "resource_type": "script",
+            }
+        ],
+        "summary": {},
+    }
+    findings_map = {f["check_id"]: f for f in generate_findings(crawl_data)["findings"]}
+    f = findings_map["IN-BP-001"]
+    assert f["result"] == "informational"
+    assert f["confidence"] == "medium"
+    assert "suggested_fix" not in f
+    assert f["evidence"] == ["js.stripe.com (script loaded from provider): https://js.stripe.com/v3/buy-button.js"]
+    assert "Scripts from third-party providers are listed for the inventory; whether they can be self-hosted depends on the provider. No self-hosting advice given." in f["notes"]
+
+
+def test_bp_001_mixed_assets_advises_only_group_1():
+    """Mixed assets case: suggested_fix mentions only Group 1 hosts and Group 2 uses provider label."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [{"url": "http://127.0.0.1/", "consent_controls": []}],
+        "external_requests": [
+            {
+                "domain": "fonts.googleapis.com",
+                "url": "https://fonts.googleapis.com/css2?family=Roboto",
+                "resource_type": "stylesheet",
+            },
+            {
+                "domain": "js.stripe.com",
+                "url": "https://js.stripe.com/v3/buy-button.js",
+                "resource_type": "script",
+            },
+        ],
+        "summary": {},
+    }
+    findings_map = {f["check_id"]: f for f in generate_findings(crawl_data)["findings"]}
+    f = findings_map["IN-BP-001"]
+    assert f["result"] == "informational"
+    assert f["confidence"] == "medium"
+    assert f["suggested_fix"] == "Self-host these static assets to avoid sending visitor IP addresses to their hosts: fonts.googleapis.com"
+    assert "js.stripe.com" not in f["suggested_fix"]
+    assert "fonts.googleapis.com (stylesheet): https://fonts.googleapis.com/css2?family=Roboto" in f["evidence"]
+    assert "js.stripe.com (script loaded from provider): https://js.stripe.com/v3/buy-button.js" in f["evidence"]
+
+
+def test_bp_001_clean_case_met_unchanged():
+    """Zero external assets evaluates to met without confidence override or suggested_fix."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [{"url": "http://127.0.0.1/", "consent_controls": []}],
+        "external_requests": [],
+        "summary": {},
+    }
+    findings_map = {f["check_id"]: f for f in generate_findings(crawl_data)["findings"]}
+    f = findings_map["IN-BP-001"]
+    assert f["result"] == "met"
+    assert f["evidence"] == ["All static assets are self-hosted; zero external static asset requests detected."]
+    assert "confidence" not in f
+    assert "suggested_fix" not in f
+    assert "Self-hosted static assets baseline satisfied." in f["notes"]
+
+
+def test_bp_001_confidence_override_rendered_in_report(tmp_path: Path):
+    """Informational IN-BP-001 finding renders confidence medium in report markdown and JSON."""
+    findings_data = {
+        "findings": [
+            {
+                "check_id": "IN-BP-001",
+                "result": "informational",
+                "confidence": "medium",
+                "evidence": ["custom-cdn.example.org (stylesheet): https://custom-cdn.example.org/style.css"],
+                "suggested_fix": "Self-host these static assets to avoid sending visitor IP addresses to their hosts: custom-cdn.example.org",
+                "notes": "External static assets detected.",
+            }
+        ]
+    }
+    findings_file = tmp_path / "findings.json"
+    findings_file.write_text(json.dumps(findings_data), encoding="utf-8")
+    md, json_out = generate_report(
+        findings_path=findings_file,
+        jurisdiction="india",
+        today=datetime_date(2026, 10, 29),
+        base_dir=WORKSPACE_ROOT,
+    )
+    bp_findings = json_out["sections"]["best_practice"]
+    bp_001 = [item for item in bp_findings if item["check_id"] == "IN-BP-001"][0]
+    assert bp_001["confidence"] == "medium"
+    assert "- **Confidence:** medium" in md
+
+
+def test_bp_002_singular_and_plural_click_notes():
+    """IN-BP-002 notes: 'within 1 click' for depth 1, 'within 2 clicks' for depth 2."""
+    for depth, expected_phrase in [(1, "within 1 click from start page"), (2, "within 2 clicks from start page")]:
+        crawl_data = {
+            "metadata": {"pages_crawled": depth + 1, "max_depth_reached": depth, "pages_skipped": 0, "pages_failed": 0},
+            "pages": [],
+            "external_requests": [],
+            "summary": {
+                "min_contact_depth": depth,
+                "contact_pages": [{"url": "http://127.0.0.1/contact.html", "depth": depth}],
+            },
+        }
+        findings_map = {f["check_id"]: f for f in generate_findings(crawl_data)["findings"]}
+        f = findings_map["IN-BP-002"]
+        assert f["result"] == "met"
+        assert expected_phrase in f["notes"]
+
+
+def test_bp_001_image_unlisted_host_loaded_from_provider_no_advice():
+    """Image from an unlisted host appears as 'loaded from provider' with no suggested_fix advice."""
+    crawl_data = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [{"url": "http://127.0.0.1/", "consent_controls": []}],
+        "external_requests": [
+            {
+                "domain": "images.example.com",
+                "url": "https://images.example.com/logo.png",
+                "resource_type": "image",
+            }
+        ],
+        "summary": {},
+    }
+    findings_map = {f["check_id"]: f for f in generate_findings(crawl_data)["findings"]}
+    f = findings_map["IN-BP-001"]
+    assert f["result"] == "informational"
+    assert "suggested_fix" not in f
+    assert f["evidence"] == ["images.example.com (image loaded from provider): https://images.example.com/logo.png"]
+    assert "No self-hosting advice given." in f["notes"]
+
+
+def test_is_self_hostable_cdn_subdomain_and_attacker_checks():
+    """is_self_hostable_cdn rejects lookalikes and requires exact match or dotted subdomain."""
+    assert is_self_hostable_cdn("fonts.googleapis.com") is True
+    assert is_self_hostable_cdn("sub.unpkg.com") is True
+    assert is_self_hostable_cdn("cdn.jsdelivr.net") is True
+    assert is_self_hostable_cdn("evil-unpkg.com.attacker.net") is False
+    assert is_self_hostable_cdn("notunpkg.com") is False
+    assert is_self_hostable_cdn("js.stripe.com") is False
+
+
+def test_mutation_external_request_classification():
+    """Mutation test asserting mutated != original before verifying request classification."""
+    original = "https://js.stripe.com/v3/buy-button.js"
+    mutated = original.replace("js.stripe.com", "cdn.jsdelivr.net")
+    assert mutated != original
+
+    req_orig = {"domain": "js.stripe.com", "url": original, "resource_type": "script"}
+    req_mut = {"domain": "cdn.jsdelivr.net", "url": mutated, "resource_type": "script"}
+
+    cd_orig = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [],
+        "external_requests": [req_orig],
+        "summary": {},
+    }
+    cd_mut = {
+        "metadata": {"pages_crawled": 1, "max_depth_reached": 1, "pages_skipped": 0, "pages_failed": 0},
+        "pages": [],
+        "external_requests": [req_mut],
+        "summary": {},
+    }
+
+    f_orig = {f["check_id"]: f for f in generate_findings(cd_orig)["findings"]}["IN-BP-001"]
+    f_mut = {f["check_id"]: f for f in generate_findings(cd_mut)["findings"]}["IN-BP-001"]
+
+    assert "suggested_fix" not in f_orig
+    assert "suggested_fix" in f_mut
+    assert "cdn.jsdelivr.net" in f_mut["suggested_fix"]

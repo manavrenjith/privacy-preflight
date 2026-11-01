@@ -653,6 +653,7 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
             "result": "unclear",
             "evidence": ["no consent controls detected across crawled pages"],
             "notes": f"No consent pages found among the crawled pages. (evaluation covers consent pages only, excluding general footer, notice or bare webforms) (pages crawled: {pages_crawled})",
+            "confidence": "medium",
         })
     else:
         passing_consent_ev: List[str] = []
@@ -899,6 +900,7 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
                 "result": "unclear",
                 "evidence": ["not found among crawled pages (crawl incomplete)"],
                 "notes": f"Privacy policy not found among crawled pages; {incomplete_crawl_note}. (pages crawled: {pages_crawled})",
+                "confidence": "medium",
             })
         else:
             findings.append({
@@ -963,6 +965,7 @@ def evaluate_pages(crawl_data: Dict[str, Any]) -> Dict[str, Any]:
             "result": best_result,
             "evidence": best_ev,
             "notes": best_notes,
+            **({"confidence": "medium"} if best_result == "unclear" else {}),
             **({"suggested_fix": "Publish a comprehensive privacy policy addressing Rule 4 elements and designate a named Grievance Officer with published email or phone."} if best_result == "not-met" else {}),
         })
 

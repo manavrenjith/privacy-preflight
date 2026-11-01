@@ -1069,3 +1069,42 @@ def test_mutation_check_assertion():
     elements_mut, _ = check_r4_elements(mutated)
     assert elements_orig["security"] is True
     assert elements_mut["security"] is False
+
+
+def test_spdi_001_and_dpdp_008_unclear_carry_medium():
+    """IN-SPDI-001 unclear and IN-DPDP-008 unclear findings carry confidence: 'medium'."""
+    # 1. DPDP-008 unclear when no consent controls are found
+    crawl_data_008 = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/index.html",
+                "title": "Home",
+                "text": "Welcome",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res_008 = evaluate_pages(crawl_data_008)
+    f_008 = {item["check_id"]: item for item in res_008["findings"]}["IN-DPDP-008"]
+    assert f_008["result"] == "unclear"
+    assert f_008.get("confidence") == "medium"
+
+    # 2. SPDI-001 unclear when elements are missing or officer not named
+    crawl_data_spdi = {
+        "metadata": {"pages_crawled": 1, "pages_failed": 0, "max_pages": 30},
+        "pages": [
+            {
+                "url": "http://127.0.0.1/privacy.html",
+                "title": "Privacy Policy",
+                "text": "Privacy Policy\n1. Information We Collect\n2. Security Practices",
+                "links": [],
+                "consent_controls": [],
+            }
+        ],
+    }
+    res_spdi = evaluate_pages(crawl_data_spdi)
+    f_spdi = {item["check_id"]: item for item in res_spdi["findings"]}["IN-SPDI-001"]
+    assert f_spdi["result"] == "unclear"
+    assert f_spdi.get("confidence") == "medium"

@@ -346,15 +346,41 @@ def test_expected_findings_format_and_coverage():
             f"IN-DPDP-011 must be 'needs-human' for {app_name}"
         )
 
-    # Flawed app checks (other than IN-BP-004 and IN-DPDP-011) should be not-met
-    for cid, finding in data["flawed-app"].items():
-        if cid not in ("IN-BP-004", "IN-DPDP-011"):
-            assert finding["result"] == "not-met", f"Flawed app check {cid} expected 'not-met', got '{finding['result']}'"
+    # Assisted checks report needs-human and best-practice checks report informational or met.
+    EXPECTED_FLAWED = {
+        "IN-BP-004": "informational",
+        "IN-BP-001": "informational",
+        "IN-DPDP-004": "not-met",
+        "IN-DPDP-002": "not-met",
+        "IN-DPDP-008": "not-met",
+        "IN-BP-002": "not-met",
+        "IN-DPDP-009": "not-met",
+        "IN-DPDP-010": "not-met",
+        "IN-DPDP-011": "needs-human",
+        "IN-DPDP-013": "needs-human",
+        "IN-BP-003": "informational",
+        "IN-SPDI-001": "not-met",
+    }
+    EXPECTED_CLEAN = {
+        "IN-BP-004": "informational",
+        "IN-BP-001": "met",
+        "IN-DPDP-004": "met",
+        "IN-DPDP-002": "met",
+        "IN-DPDP-008": "met",
+        "IN-BP-002": "met",
+        "IN-DPDP-009": "met",
+        "IN-DPDP-010": "met",
+        "IN-DPDP-011": "needs-human",
+        "IN-DPDP-013": "needs-human",
+        "IN-BP-003": "informational",
+        "IN-SPDI-001": "met",
+    }
 
-    # Clean app checks (other than IN-BP-004 and IN-DPDP-011) should be met
-    for cid, finding in data["clean-app"].items():
-        if cid not in ("IN-BP-004", "IN-DPDP-011"):
-            assert finding["result"] == "met", f"Clean app check {cid} expected 'met', got '{finding['result']}'"
+    flawed_results = {cid: f["result"] for cid, f in data["flawed-app"].items()}
+    assert flawed_results == EXPECTED_FLAWED, f"Flawed app results mismatch: {flawed_results} != {EXPECTED_FLAWED}"
+
+    clean_results = {cid: f["result"] for cid, f in data["clean-app"].items()}
+    assert clean_results == EXPECTED_CLEAN, f"Clean app results mismatch: {clean_results} != {EXPECTED_CLEAN}"
 
 
 def test_demo_readme():

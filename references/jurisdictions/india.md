@@ -28,8 +28,8 @@ caveats: "Informational only, no pass/fail; every row outputs 'legal status uncl
 open_question_refs:
   - Q2
 detection_type: automated
-detection: "Automated crawl of key application pages and network requests; extract outbound domains and resolve destination countries via DNS/IP geolocation; compare against config/restricted-countries.yaml."
-pass_criteria: "Informational inventory output only. No pass/fail assigned. Every third-party call reports 'legal status unclear' (open-questions.md Q2)."
+detection: "External domains requested during same-origin page crawls are recorded in an inventory. Destination country is reported as 'not resolved'. No DNS or IP lookups are made, and config/restricted-countries.yaml is not used by the scanner."
+pass_criteria: "Informational inventory output only. No pass/fail assigned. Every third-party call reports 'legal status unclear' (open-questions.md Q2). External domains requested during page crawls are recorded in an inventory with destination country reported as 'not resolved'."
 ```
 
 ---
@@ -50,8 +50,8 @@ caveats: "Self-hosting static assets (such as web fonts, common JavaScript libra
 open_question_refs:
   - Q2
 detection_type: automated
-detection: "Scan HTML templates, bundle manifests, and outbound network traffic for third-party hosted static assets (e.g. Google Fonts, CDNjs, unpkg, external font/CSS delivery endpoints)."
-pass_criteria: "Flag external static asset domains as recommendations to self-host. Informational only; never output a failure or violation."
+detection: "Outbound network requests intercepted during the crawl are inspected for third-party hosted static assets (fonts, scripts, stylesheets, and media). HTML templates and bundle manifests on disk are not scanned."
+pass_criteria: "Met if no external static asset network requests are intercepted; informational with a recommendation to self-host if external static assets are detected. Never output a failure or violation."
 ```
 
 ---
@@ -71,8 +71,8 @@ confidence: medium
 caveats: "Objective automated detection covers only pre-ticked controls and single controls bundling multiple distinct purposes. Evaluation of whether consent is 'unconditional', 'free', or 'informed' requires legal and contextual judgment. The Act contains no cookie-specific rule."
 open_question_refs: []
 detection_type: automated
-detection: "Automated scan of HTML/JS, DOM trees, and mobile UI layouts for consent checkboxes/toggles that default to checked/on, consent inferred from scrolling or continued use, or a single control covering multiple distinct processing purposes."
-pass_criteria: "No consent control is pre-selected (pre-ticked); each distinct purpose has its own independent control."
+detection: "Automated inspection of form controls on crawled web pages at load time for consent checkboxes or toggles that are pre-checked or bundle multiple purposes into one control. Static JavaScript files, mobile layouts, and consent inferred from scrolling or continued use are not analysed."
+pass_criteria: "No consent control is pre-selected (pre-ticked); each distinct purpose has its own independent control. The scanner inspects crawled web pages at load time, reporting met if all controls are unchecked and unbundled, not-met if any is pre-checked or bundled, or unclear if none are detected."
 ```
 
 ---
@@ -92,8 +92,8 @@ confidence: high
 caveats: "Not required for s.7 'certain legitimate uses' where consent is not the legal basis. Startup exemption power under s.17(3) not notified (secondary finding). Note that Act s.5(1)(ii) names s.6(4) and s.13; r.3(c)(ii) widens to 'rights under the Act'; r.3(c) requires a link plus 'other means, if any'."
 open_question_refs: []
 detection_type: automated
-detection: "Automated search on notice pages for a working communication link to the website/app, plus described routes for consent withdrawal, rights exercise, and Board complaints."
-pass_criteria: "Notice contains an accessible communication link to the website/app and explicitly describes the routes for withdrawal, rights exercise, and Board complaints."
+detection: "Keyword-based presence search on crawled notice pages for communication routes and terms describing consent withdrawal, rights exercise, and Board complaints. Absence means 'not found among crawled pages'. Adequacy of wording is never judged."
+pass_criteria: "Notice contains an accessible communication link to the website/app and explicitly describes the routes for withdrawal, rights exercise, and Board complaints. The scanner evaluates crawled notice pages for keyword presence of these topics and a contact route, reporting not found among crawled pages if absent without assessing wording adequacy."
 ```
 
 ---
@@ -113,8 +113,8 @@ confidence: high
 caveats: "LAW (Act s.6(3), r.9): consent requests must contain or link to the business contact details of the DPO or authorized contact person. Contact details must also be prominently published on the website or app (Act s.8(9), r.9). Mandatory DPO applies only to notified Significant Data Fiduciaries (s.10(2)(a); from original research; not re-verified in the verification report); other fiduciaries require an authorized contact person. Note: reaching contact details within two clicks is a separate engineering best practice (see IN-BP-002), not in r.9 which uses 'prominently'."
 open_question_refs: []
 detection_type: automated
-detection: "Automated crawl of footer, privacy notice, and consent request screens for a named role or contact channel (email, phone, webform)."
-pass_criteria: "Consent requests contain or link directly to contact details; business contact information is published on the website or app."
+detection: "Each crawled page that contains consent controls is inspected for an email address, a phone number, a named role (Data Protection Officer, DPO, Grievance Officer, authorized contact person), or a direct link to a crawled page that contains one. A bare webform does not count. Footer-wide or notice-wide publication is not assessed by this check."
+pass_criteria: "Consent requests contain or link directly to contact details; business contact information is published on the website or app. The scanner checks pages with consent controls for direct display or direct links to an email address, a phone number, or a named role, reporting unclear if no consent controls are detected."
 ```
 
 ---
@@ -134,8 +134,8 @@ confidence: medium
 caveats: "Reaching contact details from the home page or app settings within at most two clicks is an engineering best-practice threshold. Rule 9 uses the qualitative standard 'prominently', not a two-click count."
 open_question_refs: []
 detection_type: automated
-detection: "Crawl page link graph from the home page or mobile root settings; measure click-distance to views displaying privacy contact information."
-pass_criteria: "Contact information reachable in at most two clicks or taps from landing screens. Output advisory notice if distance exceeds two clicks."
+detection: "Crawl same-origin web page link graph from the start URL; measure click distance in same-origin link clicks to pages displaying contact details. Mobile settings are not inspected. Contact details means an email address in page text or an explicit mailto: or tel: link."
+pass_criteria: "Met if a page displaying contact details is reachable within at most two same-origin link clicks from the start URL; not-met with an advisory suggested fix if minimum click distance exceeds two; unclear if no contact page is reachable."
 ```
 
 ---
@@ -155,8 +155,8 @@ confidence: medium
 caveats: "Note that s.11 (access) and s.12 (correction and erasure) apply only where processing is based on consent or s.7(a) voluntary provision. Access under s.11(1)(b) includes third-party recipient inventory. s.17(3) exemption power covers s.11 but not s.12 (none notified; secondary finding). Automated checks verify presence of published routes and stated authentication requirements; fulfillment adequacy requires operational review."
 open_question_refs: []
 detection_type: automated
-detection: "Automated crawl for published rights endpoints, forms, or in-app controls; verify mention of access, correction, erasure, and nomination routes, and required authentication particulars."
-pass_criteria: "A published mechanism exists covering each statutory right, specifying the authentication particulars required."
+detection: "Keyword-based presence search on crawled rights pages for mentions of access, correction, erasure, nomination, and authentication particulars. Absence means 'not found among crawled pages'. Adequacy of wording is never judged."
+pass_criteria: "A published mechanism exists covering each statutory right, specifying the authentication particulars required. The scanner evaluates crawled rights pages for keyword presence of access, correction, erasure, nomination, and authentication particulars, reporting not found among crawled pages if absent without assessing wording adequacy."
 ```
 
 ---
@@ -177,8 +177,8 @@ caveats: "Dual regime clocks: SPDI r.5(9) requires grievance redressal 'within o
 open_question_refs:
   - Q7
 detection_type: automated
-detection: "Automated crawl for a published grievance channel and stated response timeline."
-pass_criteria: "A published grievance route exists. Tool displays both applicable response clocks (SPDI: 1 month; DPDP: up to 90 days under r.14(3) for grievances only) and recommends following the stricter one-month standard while both regimes apply."
+detection: "Keyword-based presence search on crawled grievance pages for a published grievance channel and a stated response timeline within context window of grievance keywords. Absence means 'not found among crawled pages'. Adequacy of wording is never judged."
+pass_criteria: "A published grievance route exists. Tool displays both applicable response clocks (SPDI: 1 month; DPDP: up to 90 days under r.14(3) for grievances only) and recommends following the stricter one-month standard while both regimes apply. The scanner evaluates crawled grievance pages for a published route with a stated response timeline within context window of grievance keywords."
 ```
 
 ---
@@ -200,8 +200,8 @@ open_question_refs:
   - Q4
   - Q21
 detection_type: assisted
-detection: "Inspect onboarding, signup, or checkout code for date-of-birth fields, age gates, or child-directed signals. Human reviewer confirms whether the application is child-directed or accessible to children."
-pass_criteria: "Where users may be under 18: an age signal exists prior to personal data collection, triggering a parental consent verification branch before account creation or storage. The tool never judges the legal sufficiency of verification mechanisms."
+detection: "Per-line static pattern matching for presence or absence of age-related signals (dob_field, age_field, over_18_toggle, parental_branch) in source files only (.html, .htm, .vue, .svelte, .php, .js, .ts, .py, and .json only if named signup or onboard). Order of events is not assessed. Human reviewer confirms whether the application is child-directed or accessible to children."
+pass_criteria: "Where users may be under 18: an age signal exists prior to personal data collection, triggering a parental consent verification branch before account creation or storage. The tool never judges the legal sufficiency of verification mechanisms. The scanner reports needs-human when eligible files were scanned, or unclear if none were found, listing detected signals without evaluating event ordering."
 ```
 
 ---
@@ -222,8 +222,8 @@ caveats: "Rule 6 gives no numeric standard besides the one-year log retention: e
 open_question_refs:
   - Q6
 detection_type: assisted
-detection: "Scan code and cloud config for HTTPS-only enforcement, database/volume encryption, secrets committed to repositories, authentication on administrative routes, access logging flags, log retention settings, and backup policies."
-pass_criteria: "Evidence of controls across Rule 6(1) categories. Log retention: no pass/fail; report the detected log retention setting and flag the r.6(1)(e) exception and r.8(3) scope."
+detection: "Static scan of recognised technical configuration files: .env*, auth code, nginx.conf (*.conf), storage rules (*.rules), logging JSON (*log*.json), and backup scripts. Cloud configuration, volume or database encryption, administrative-route authentication, backup policies, and TLS cipher suites are not assessed. Secret values are never printed."
+pass_criteria: "Evidence of controls across Rule 6(1) categories. Log retention: no pass/fail; report the detected log retention setting and flag the r.6(1)(e) exception and r.8(3) scope. The scanner reports needs-human when recognised files were scanned, or unclear if none were found, grouping findings by category without evaluating legal sufficiency."
 ```
 
 ---
@@ -243,8 +243,8 @@ confidence: medium
 caveats: "Specific technical thresholds (such as TLS 1.3/HSTS, AES-256 for data at rest, Argon2id/bcrypt for password hashing, and encrypted backups) are engineering best practices, not statutory standards prescribed by the Act or Rules."
 open_question_refs: []
 detection_type: automated
-detection: "Static analysis of server configuration, TLS cipher suites, password hashing algorithms, and backup encryption configurations."
-pass_criteria: "Evaluate configurations against modern engineering security baselines. Report non-binding advisory findings for deprecated ciphers or insecure storage parameters."
+detection: "Static analysis of recognised configuration and code files for password hashing algorithms, HSTS headers, TLS protocol lines, storage write permissions, and backup encryption settings. TLS cipher suites are not evaluated."
+pass_criteria: "Result is always informational. Reports non-binding advisory evidence for weak hashing, no Strict-Transport-Security header found, public storage write, or unencrypted backups, alongside informational evidence for recommended settings. Includes a one-line suggested fix if advisories are detected."
 ```
 
 ---
@@ -267,8 +267,8 @@ open_question_refs:
   - Q8
   - Q23
 detection_type: automated
-detection: "Automated crawl for privacy policy link, verification of five r.4 policy sections, and presence of named Grievance Officer and contact details."
-pass_criteria: "A published privacy policy containing the five required elements and a named Grievance Officer with working contact information."
+detection: "Keyword-based presence search on crawled privacy policy pages for five Rule 4 policy elements matched on short lines of page text (not HTML headings) and a named Grievance Officer with contact details. Named Grievance Officer detection is a heuristic. Absence means 'not found among crawled pages'. Adequacy of wording is never judged."
+pass_criteria: "A published privacy policy containing the five required elements and a named Grievance Officer with working contact information. The scanner evaluates crawled privacy policy pages for the five elements matched on short lines of page text and a named Grievance Officer identified by a heuristic."
 ```
 
 ---

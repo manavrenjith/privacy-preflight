@@ -8,9 +8,9 @@
     },
     "IN-BP-001": {
       "check_id": "IN-BP-001",
-      "result": "not-met",
+      "result": "informational",
       "file": "demo/flawed-app/index.html",
-      "reason": "demo/flawed-app/index.html: External static assets loaded from fonts.googleapis.com and cdn.analytics.example.test instead of being self-hosted."
+      "reason": "demo/flawed-app/index.html: External static assets requested from fonts.googleapis.com and cdn.analytics.example.test; recommendation to self-host static assets."
     },
     "IN-DPDP-004": {
       "check_id": "IN-DPDP-004",
@@ -56,15 +56,15 @@
     },
     "IN-DPDP-013": {
       "check_id": "IN-DPDP-013",
-      "result": "not-met",
+      "result": "needs-human",
       "file": "demo/flawed-app/logging.json",
-      "reason": "demo/flawed-app/logging.json: Configures 7-day log retention below the one-year standard and repository commits plaintext secrets in demo/flawed-app/.env."
+      "reason": "demo/flawed-app/logging.json: 7-day log retention setting reported, not judged; committed secret in demo/flawed-app/.env; md5 hashing in demo/flawed-app/auth.js; public-write storage rule in demo/flawed-app/storage.rules; no Strict-Transport-Security header found in demo/flawed-app/nginx.conf."
     },
     "IN-BP-003": {
       "check_id": "IN-BP-003",
-      "result": "not-met",
+      "result": "informational",
       "file": "demo/flawed-app/auth.js",
-      "reason": "demo/flawed-app/auth.js: Uses MD5 password hashing, demo/flawed-app/nginx.conf lacks HSTS, and demo/flawed-app/storage.rules allows public write."
+      "reason": "demo/flawed-app/auth.js: md5 password hashing detected; demo/flawed-app/nginx.conf: no Strict-Transport-Security header found; demo/flawed-app/storage.rules permits public write; 7-day log retention in demo/flawed-app/logging.json."
     },
     "IN-SPDI-001": {
       "check_id": "IN-SPDI-001",
@@ -130,15 +130,15 @@
     },
     "IN-DPDP-013": {
       "check_id": "IN-DPDP-013",
-      "result": "met",
+      "result": "needs-human",
       "file": "demo/clean-app/logging.json",
-      "reason": "demo/clean-app/logging.json: Configures 365-day log retention and secrets are excluded from repository via .env.example."
+      "reason": "demo/clean-app/logging.json: 365-day log retention setting reported, not judged; argon2 and argon2id hashing in demo/clean-app/auth.js; Strict-Transport-Security header configured and TLSv1.3 in demo/clean-app/nginx.conf; restricted access in demo/clean-app/storage.rules; zero committed secrets."
     },
     "IN-BP-003": {
       "check_id": "IN-BP-003",
-      "result": "met",
+      "result": "informational",
       "file": "demo/clean-app/auth.js",
-      "reason": "demo/clean-app/auth.js: Uses argon2id hashing, demo/clean-app/nginx.conf enforces HSTS, and demo/clean-app/storage.rules restricts access."
+      "reason": "demo/clean-app/auth.js: argon2 and argon2id password hashing configured; demo/clean-app/nginx.conf configures Strict-Transport-Security header; demo/clean-app/storage.rules restricts access; 365-day log retention in demo/clean-app/logging.json; no advisory findings among recognised formats."
     },
     "IN-SPDI-001": {
       "check_id": "IN-SPDI-001",

@@ -7,6 +7,7 @@ on temporary copies (tmp_path) accurately trigger expected rule failures or warn
 from __future__ import annotations
 
 import datetime
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,7 @@ def test_mutation_missing_required_field(temp_workspace: Path):
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
     mutated = content.replace("detection_type: automated", "")
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -82,6 +84,7 @@ def test_mutation_unknown_applies_from_key(temp_workspace: Path):
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
     mutated = content.replace("applies_from: dpdp.stage_3", "applies_from: dpdp.stage_unknown", 1)
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -97,6 +100,7 @@ def test_mutation_law_with_none_provision(temp_workspace: Path):
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
     mutated = content.replace('provision: "Act s.6(1), 6(2)"', 'provision: "none (engineering practice)"')
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -115,6 +119,7 @@ def test_mutation_best_practice_with_real_applies_from(temp_workspace: Path):
         "id: IN-BP-001\ntitle: Self-host static assets (fonts, scripts, and CDNs)\nlabel: BEST PRACTICE\nprovision: \"none (engineering practice)\"\napplies_from: none",
         "id: IN-BP-001\ntitle: Self-host static assets (fonts, scripts, and CDNs)\nlabel: BEST PRACTICE\nprovision: \"none (engineering practice)\"\napplies_from: dpdp.stage_3",
     )
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -133,6 +138,7 @@ def test_mutation_applies_until_on_best_practice(temp_workspace: Path):
         "id: IN-BP-001\ntitle: Self-host static assets (fonts, scripts, and CDNs)\nlabel: BEST PRACTICE\nprovision: \"none (engineering practice)\"\napplies_from: none",
         "id: IN-BP-001\ntitle: Self-host static assets (fonts, scripts, and CDNs)\nlabel: BEST PRACTICE\nprovision: \"none (engineering practice)\"\napplies_from: none\napplies_until: spdi.s43a_omitted",
     )
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -153,6 +159,7 @@ def test_mutation_applies_until_earlier_than_applies_from(temp_workspace: Path):
         "applies_from: dpdp.stage_3\napplies_until: dpdp.stage_1",
         1,
     )
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -168,6 +175,7 @@ def test_mutation_official_text_no_log_row(temp_workspace: Path):
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
     mutated = content.replace("id: IN-DPDP-004", "id: IN-DPDP-999")
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -186,6 +194,7 @@ def test_mutation_human_read_without_log_support(temp_workspace: Path):
         "id: IN-DPDP-004\ntitle: Consent controls (unbundled purposes and no pre-ticked controls)\nlabel: LAW\nprovision: \"Act s.6(1), 6(2)\"\napplies_from: dpdp.stage_3\nlast_verified: 2026-10-29\nverified_against: official-text\nverified_by: ai-read",
         "id: IN-DPDP-004\ntitle: Consent controls (unbundled purposes and no pre-ticked controls)\nlabel: LAW\nprovision: \"Act s.6(1), 6(2)\"\napplies_from: dpdp.stage_3\nlast_verified: 2026-10-29\nverified_against: official-text\nverified_by: human-read",
     )
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -202,6 +211,7 @@ def test_mutation_duplicate_id(temp_workspace: Path):
     content = india_md.read_text(encoding="utf-8")
     # Rename IN-BP-001 to IN-BP-004
     mutated = content.replace("id: IN-BP-001", "id: IN-BP-004")
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -217,6 +227,7 @@ def test_mutation_unknown_q_ref(temp_workspace: Path):
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
     mutated = content.replace("open_question_refs:\n  - Q7", "open_question_refs:\n  - Q99")
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -231,10 +242,9 @@ def test_mutation_compliant_in_pass_criteria(temp_workspace: Path):
     """Expect failure when pass_criteria contains prohibited word 'compliant'."""
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
-    mutated = content.replace(
-        "pass_criteria: \"No consent control is pre-selected (pre-ticked); each distinct purpose has its own independent control.\"",
-        "pass_criteria: \"Ensure the consent UI is fully compliant with the Act.\"",
-    )
+    pattern = r'(id:\s*IN-DPDP-004\b[\s\S]*?pass_criteria:\s*")([^"]*)(")'
+    mutated = re.sub(pattern, r'\1\2 compliant\3', content, count=1)
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -253,6 +263,7 @@ def test_mutation_compliant_in_title(temp_workspace: Path):
         "title: Consent controls (unbundled purposes and no pre-ticked controls)",
         "title: Compliant consent controls (unbundled)",
     )
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -268,6 +279,7 @@ def test_mutation_last_verified_in_future(temp_workspace: Path):
     india_md = temp_workspace / "references" / "jurisdictions" / "india.md"
     content = india_md.read_text(encoding="utf-8")
     mutated = content.replace("last_verified: 2026-10-29", "last_verified: 2026-11-15", 1)
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)
@@ -284,6 +296,7 @@ def test_mutation_stale_last_verified_produces_warning(temp_workspace: Path):
     content = india_md.read_text(encoding="utf-8")
     # Mutate one check to 2026-01-01
     mutated = content.replace("last_verified: 2026-10-29", "last_verified: 2026-01-01", 1)
+    assert mutated != content
     india_md.write_text(mutated, encoding="utf-8")
 
     result = validate_jurisdiction("india", today=datetime.date(2026, 10, 29), base_dir=temp_workspace)

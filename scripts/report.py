@@ -283,7 +283,7 @@ def generate_report(
     for f in processed_findings:
         if f["result"] in ("needs-human", "unclear"):
             needs_human_findings.append(f)
-        elif f["check_id"] == "IN-BP-004" or f["result"] == "informational":
+        elif f["check_id"] == "IN-BP-004" or (f["result"] == "informational" and f["label"] != "BEST PRACTICE"):
             informational_findings.append(f)
         elif f["label"] == "BEST PRACTICE":
             best_practice_findings.append(f)
@@ -387,7 +387,7 @@ def generate_report(
         for f in in_force_findings:
             md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
-        md_lines.append("No findings in this category.")
+        md_lines.append("No findings of this kind among the checks that ran.")
         md_lines.append("")
 
     # Section 3: Readiness
@@ -397,7 +397,7 @@ def generate_report(
         for f in readiness_findings:
             md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
-        md_lines.append("No findings in this category.")
+        md_lines.append("No findings of this kind among the checks that ran.")
         md_lines.append("")
 
     # Section 4: Unresolved
@@ -407,7 +407,7 @@ def generate_report(
         for f in unresolved_findings:
             md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
-        md_lines.append("No findings in this category.")
+        md_lines.append("No findings of this kind among the checks that ran.")
         md_lines.append("")
 
     # Section 5: Informational inventory
@@ -417,7 +417,7 @@ def generate_report(
         for f in informational_findings:
             md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
-        md_lines.append("No findings in this category.")
+        md_lines.append("No findings of this kind among the checks that ran.")
         md_lines.append("")
 
     # Section 6: Best practice
@@ -427,7 +427,7 @@ def generate_report(
         for f in best_practice_findings:
             md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
-        md_lines.append("No findings in this category.")
+        md_lines.append("No findings of this kind among the checks that ran.")
         md_lines.append("")
 
     # Section 7: Needs human or legal judgment
@@ -437,7 +437,7 @@ def generate_report(
         for f in needs_human_findings:
             md_lines.append(render_finding_markdown(f, jurisdiction=jurisdiction, verbose=verbose))
     else:
-        md_lines.append("No findings in this category.")
+        md_lines.append("No findings of this kind among the checks that ran.")
         md_lines.append("")
 
     # Section 8: Not run (active checks with no finding supplied)

@@ -68,7 +68,7 @@ PROHIBITED_WORDS = [
 PATH_FIRST_REGEX = re.compile(
     r"^(?:[a-zA-Z0-9_./-]+(?::\d+)?: (?:encryption/transport|access control(?: \(authentication\))?|access logging and monitoring|backups/continuity|retention settings|committed secrets|advisory|informational): .+"
     r"|no recognised files found; nothing assessed"
-    r"|no advisory findings across \d+ scanned files"
+    r"|no advisory findings among the patterns checked \(\d+ scanned files\)"
     r"|[a-z/ ]+: (?:no (?:matching configuration|backup or continuity configuration|committed secrets) detected in scanned files|\d+ more matches not shown \(total \d+\)))$"
 )
 
@@ -426,7 +426,7 @@ def test_sha256_checksum_not_flagged(tmp_path: Path):
 
     bp = findings["IN-BP-003"]
     assert not any("weak password hashing" in ev for ev in bp["evidence"])
-    assert any("no advisory findings across 1 scanned files" in ev for ev in bp["evidence"])
+    assert any("no advisory findings among the patterns checked (1 scanned files)" in ev for ev in bp["evidence"])
 
 
 def test_strong_hashing_algorithms(tmp_path: Path):
@@ -780,7 +780,7 @@ def test_oracle_demo_clean_app():
     assert "suggested_fix" not in bp
     bp_ev = bp["evidence"]
     assert not any(ev.startswith("advisory:") for ev in bp_ev)
-    assert any("no advisory findings across 4 scanned files" in ev for ev in bp_ev)
+    assert any("no advisory findings among the patterns checked (4 scanned files)" in ev for ev in bp_ev)
     assert any("auth.js: informational: recommended password hashing algorithm 'argon2" in ev for ev in bp_ev)
     assert any("nginx.conf:21: informational: Strict-Transport-Security header configured" in ev for ev in bp_ev)
     assert any("logging.json:5: informational: log retention configured for 365 days" in ev for ev in bp_ev)
@@ -924,3 +924,145 @@ def test_baseline_cli_and_report_rendering(tmp_path: Path):
         text=True,
     )
     assert report_proc_flawed.returncode == 0, f"report.py failed on flawed baseline findings: {report_proc_flawed.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# Task 12: Fast Keyed Hash / HMAC Detection & All-Clear Tests
+# ---------------------------------------------------------------------------
+
+def test_auth_create_hmac_synthetic_case(tmp_path: Path):
+    """Synthetic JS createHmac('sha1', salt).update(password) -> hmac-sha1 advisory and authentication finding."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    models_dir = app_dir / "models"
+    models_dir.mkdir()
+    js_content = (
+        "const crypto = require('crypto');\n"
+        "\n"
+        "function hashPassword(password, salt) {\n"
+        "  return crypto.createHmac('sha1', salt).update(password).digest('hex');\n"
+        "}\n"
+    )
+    (models_dir / "user.js").write_text(js_content, encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    # IN-BP-003
+    bp = findings["IN-BP-003"]
+    assert bp["result"] == "informational"
+    assert "models/user.js: advisory: fast keyed hash used with password data (hmac-sha1); no work factor (line 4)" in bp["evidence"]
+    assert "suggested_fix" in bp
+    assert bp["suggested_fix"] == "Upgrade password hashing to Argon2id or bcrypt with appropriate work factor"
+
+    # IN-DPDP-013
+    dpdp = findings["IN-DPDP-013"]
+    assert dpdp["result"] == "needs-human"
+    assert "models/user.js: access control (authentication): password hashing found: hmac-sha1 (line 4)" in dpdp["evidence"]
+
+
+def test_auth_python_and_php_hmac_flagged(tmp_path: Path):
+    """Python hmac.new -> hmac-sha256; PHP hash_hmac -> hmac-sha1."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    py_content = (
+        "import hmac\n"
+        "\n"
+        "def hash_pw(key, password):\n"
+        "    return hmac.new(key, password.encode(), 'sha256').hexdigest()\n"
+    )
+    (app_dir / "auth_helper.py").write_text(py_content, encoding="utf-8")
+
+    php_content = (
+        "<?php\n"
+        "function hash_user_password($password, $key) {\n"
+        "    return hash_hmac('sha1', $password, $key);\n"
+        "}\n"
+    )
+    (app_dir / "user_service.php").write_text(php_content, encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_ev = findings["IN-BP-003"]["evidence"]
+    assert "auth_helper.py: advisory: fast keyed hash used with password data (hmac-sha256); no work factor (line 4)" in bp_ev
+    assert "user_service.php: advisory: fast keyed hash used with password data (hmac-sha1); no work factor (line 3)" in bp_ev
+
+    dpdp_ev = findings["IN-DPDP-013"]["evidence"]
+    assert "auth_helper.py: access control (authentication): password hashing found: hmac-sha256 (line 4)" in dpdp_ev
+    assert "user_service.php: access control (authentication): password hashing found: hmac-sha1 (line 3)" in dpdp_ev
+
+
+def test_auth_hmac_without_password_keyword_not_flagged(tmp_path: Path):
+    """createHmac('sha256', secret).update(sessionId) with no password word within 3 lines -> not flagged."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    js_content = (
+        "const crypto = require('crypto');\n"
+        "\n"
+        "function signSession(sessionId, secret) {\n"
+        "  return crypto.createHmac('sha256', secret).update(sessionId).digest('hex');\n"
+        "}\n"
+    )
+    (app_dir / "auth_tokens.js").write_text(js_content, encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp = findings["IN-BP-003"]
+    assert not any("advisory:" in ev for ev in bp["evidence"])
+    assert "no advisory findings among the patterns checked (1 scanned files)" in bp["evidence"]
+
+    dpdp = findings["IN-DPDP-013"]
+    assert not any("password hashing found" in ev for ev in dpdp["evidence"])
+
+
+def test_hash_without_password_nearby_not_flagged(tmp_path: Path):
+    """A hash line with no password word within 3 lines of it, plus an active hashing function elsewhere in the file."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    js_content = (
+        "const crypto = require('crypto');\n"
+        "\n"
+        "const sessionToken = crypto.createHmac('sha1', key).update(token).digest('hex');\n"
+        "const spacer1 = 1;\n"
+        "const spacer2 = 2;\n"
+        "const spacer3 = 3;\n"
+        "const spacer4 = 4;\n"
+        "\n"
+        "function hashUserPassword(password, salt) {\n"
+        "  return crypto.createHmac('sha1', salt).update(password).digest('hex');\n"
+        "}\n"
+    )
+    (app_dir / "user_auth.js").write_text(js_content, encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_ev = findings["IN-BP-003"]["evidence"]
+    assert "user_auth.js: advisory: fast keyed hash used with password data (hmac-sha1); no work factor (line 10)" in bp_ev
+    assert not any("line 3" in ev or "lines 3" in ev for ev in bp_ev)
+
+    dpdp_ev = findings["IN-DPDP-013"]["evidence"]
+    assert "user_auth.js: access control (authentication): password hashing found: hmac-sha1 (line 10)" in dpdp_ev
+    assert not any("line 3" in ev or "lines 3" in ev for ev in dpdp_ev)
+
+
+def test_baseline_all_clear_wording_and_notes(tmp_path: Path):
+    """All-clear wording and notes sentence in IN-BP-003."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "nginx.conf").write_text(
+        "server {\n"
+        "  add_header Strict-Transport-Security 'max-age=31536000';\n"
+        "  ssl_protocols TLSv1.3;\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp = findings["IN-BP-003"]
+    assert any("no advisory findings among the patterns checked (1 scanned files)" in ev for ev in bp["evidence"])
+    assert "Only the listed patterns are checked; other password hashing code may not be detected. Calls split across several lines may not be detected." in bp["notes"]

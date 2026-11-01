@@ -77,6 +77,9 @@ PLACEHOLDER_WORDS = {
     "example",
 }
 
+HMAC_HASH_REGEX = re.compile(
+    r"""(?i)\b(?:createHmac|hash_hmac|hmac\.new|hmac\.HMAC)\s*\(.*?(?:['"]|hashlib\.)(md5|sha1|sha-1|sha256|sha-256)\b"""
+)
 WEAK_HASH_REGEX = re.compile(r"""(?i)\b(md5|sha1|sha-1|sha256|sha-256)\b""")
 PASSWORD_KEYWORD_REGEX = re.compile(r"""(?i)\b(password|passwd|pwd)\b""")
 STRONG_HASH_REGEX = re.compile(r"""(?i)\b(argon2id|argon2|bcrypt|scrypt|pbkdf2)\b""")
@@ -304,14 +307,22 @@ def scan_directory(
                                 f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
                             )
 
+                    hmac_match = HMAC_HASH_REGEX.search(line)
                     weak_match = WEAK_HASH_REGEX.search(line)
-                    if weak_match:
+
+                    detected_alg: Optional[str] = None
+                    if hmac_match:
+                        raw = hmac_match.group(1).lower().replace("-", "")
+                        detected_alg = f"hmac-{raw}"
+                    elif weak_match:
+                        detected_alg = weak_match.group(1).lower().replace("-", "")
+
+                    if detected_alg:
                         win_start = max(0, idx - 3)
                         win_end = min(len(lines), idx + 4)
                         has_pwd = any(PASSWORD_KEYWORD_REGEX.search(lines[j]) for j in range(win_start, win_end))
                         if has_pwd:
-                            alg = weak_match.group(1).lower().replace("-", "")
-                            file_weak_hashes.setdefault(alg, []).append(line_no)
+                            file_weak_hashes.setdefault(detected_alg, []).append(line_no)
 
                     strong_match = STRONG_HASH_REGEX.search(line)
                     if strong_match:
@@ -325,9 +336,14 @@ def scan_directory(
                     dpdp_matches["access control"].append(
                         f"{rel_path_str}: access control (authentication): password hashing found: {alg} ({lines_str})"
                     )
-                    bp_advisories.append(
-                        f"{rel_path_str}: advisory: weak password hashing algorithm '{alg}' detected ({lines_str})"
-                    )
+                    if alg.startswith("hmac-"):
+                        bp_advisories.append(
+                            f"{rel_path_str}: advisory: fast keyed hash used with password data ({alg}); no work factor ({lines_str})"
+                        )
+                    else:
+                        bp_advisories.append(
+                            f"{rel_path_str}: advisory: weak password hashing algorithm '{alg}' detected ({lines_str})"
+                        )
 
                 for alg, line_list in sorted(file_strong_hashes.items()):
                     lines_str = f"line {line_list[0]}" if len(line_list) == 1 else f"lines {', '.join(str(l) for l in line_list)}"
@@ -546,6 +562,7 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"logging.json (*log*.json): log retention days and logging configuration; "
         f"auth code (*.js, *.ts, *.py, *.php with auth/login/password/user/account/signup/session in name): password hashing algorithms; "
         f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
+        f"Only the listed patterns are checked; other password hashing code may not be detected. Calls split across several lines may not be detected. "
         f"This is not an assessment of the application's security."
     )
 
@@ -554,13 +571,13 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         bp_suggested_fix = None
     else:
         if not bp_advisories:
-            bp_evidence = [f"no advisory findings across {files_scanned} scanned files"] + bp_informational
+            bp_evidence = [f"no advisory findings among the patterns checked ({files_scanned} scanned files)"] + bp_informational
         else:
             bp_evidence = bp_advisories + bp_informational
 
         # Compile suggested_fix only for advisories actually found as a single line separated by "; "
         fixes: List[str] = []
-        if any("weak password hashing" in adv for adv in bp_advisories):
+        if any("weak password hashing" in adv or "fast keyed hash" in adv for adv in bp_advisories):
             fixes.append("Upgrade password hashing to Argon2id or bcrypt with appropriate work factor")
         if any("no Strict-Transport-Security header" in adv for adv in bp_advisories):
             fixes.append("Configure Strict-Transport-Security header (e.g. 'max-age=31536000; includeSubDomains; preload') in web server configuration")

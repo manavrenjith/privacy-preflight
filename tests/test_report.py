@@ -658,3 +658,67 @@ def test_findings_with_scan_missing_pages_skipped_renders_not_reported(tmp_path:
     assert json_report["scan"]["pages_crawled"] == 5
     assert "pages_skipped" not in json_report["scan"]
 
+
+def test_report_best_practice_section_shows_informational_advisories(tmp_path: Path):
+    """Informational best practice findings (e.g. IN-BP-003) render under Best Practice, not Informational Inventory."""
+    findings_file = tmp_path / "findings_bp_info.json"
+    findings_content = {
+        "findings": [
+            {
+                "check_id": "IN-BP-003",
+                "result": "informational",
+                "evidence": [
+                    "models/user.js: advisory: fast keyed hash used with password data (hmac-sha1); no work factor (line 4)"
+                ],
+                "suggested_fix": "Upgrade password hashing to Argon2id or bcrypt with appropriate work factor",
+            }
+        ]
+    }
+    findings_file.write_text(json.dumps(findings_content), encoding="utf-8")
+
+    today = datetime.date(2026, 10, 29)
+    md_report, json_report = generate_report(
+        findings_path=findings_file,
+        jurisdiction="india",
+        today=today,
+        base_dir=WORKSPACE_ROOT,
+    )
+
+    # Extract sections
+    bp_idx = md_report.find("## Best Practice")
+    assert bp_idx != -1
+    needs_human_idx = md_report.find("## Needs Human or Legal Judgment")
+    assert needs_human_idx != -1
+    bp_section = md_report[bp_idx:needs_human_idx]
+
+    info_idx = md_report.find("## Informational Inventory")
+    assert info_idx != -1
+    info_section = md_report[info_idx:bp_idx]
+
+    # Best Practice section assertions
+    assert "### [BEST PRACTICE · not a legal requirement · verified 2026-10-29]" in bp_section
+    assert "- **Check:** IN-BP-003: Technical security baseline configurations" in bp_section
+    assert "- **Result:** informational" in bp_section
+    assert "models/user.js: advisory: fast keyed hash used with password data (hmac-sha1); no work factor (line 4)" in bp_section
+    assert "- **Suggested Fix:** Upgrade password hashing to Argon2id or bcrypt with appropriate work factor" in bp_section
+    assert "No findings of this kind among the checks that ran." not in bp_section
+
+    # Informational Inventory section assertions
+    assert "IN-BP-003" not in info_section
+    assert "No findings of this kind among the checks that ran." in info_section
+
+    # JSON report structure assertions
+    bp_cids = [f["check_id"] for f in json_report["sections"]["best_practice"]]
+    assert "IN-BP-003" in bp_cids
+
+    info_cids = [
+        f["check_id"]
+        for f in json_report["sections"].get(
+            "informational", json_report["sections"]["informational_inventory"]
+        )
+    ]
+    assert "IN-BP-003" not in info_cids
+    assert "IN-BP-003" not in [f["check_id"] for f in json_report["sections"]["informational_inventory"]]
+
+
+

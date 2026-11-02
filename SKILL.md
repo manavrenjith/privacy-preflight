@@ -103,7 +103,7 @@ python scripts/report.py --findings reports/findings.json --out reports/report.m
 - **Absence Standard:** State that absence means "not found among crawled pages" or "not found among scanned files".
 - **Present Limits:** Present Limits and Not Covered sections in full; do not summarise them away.
 - **Legal Referral:** Hand legal questions and exemption interpretations to a qualified lawyer.
-- **AI-Read Status:** Clarify that LAW checks were read by an AI model and have human spot-checks pending.
+- **AI-Read Status:** Clarify that LAW checks were read by an AI model; note that five specific passages were read by an independent non-lawyer with reported matches, while pack-wording comparison was not confirmed and review by legal counsel remains pending.
 
 ## 8. Limits
 - **Web Stacks Only:** Code checks (age signal, baseline) cover web stacks only.

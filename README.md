@@ -18,12 +18,7 @@ The tool never certifies an application.
 
 ## AI-Read, Not Lawyer-Reviewed
 
-An AI model read the attached official PDFs ("Verified by an AI model reading attached official PDFs", `research/india/verification-log.md:3`). Human spot-checks remain pending for five specific passages (`research/india/verification-log.md:6`):
-- `r.10(1)`
-- `r.8(3)`
-- `S.O. 5458(E)` (full text)
-- `CERT-In FAQ Q35/Q36`
-- `e-Gazette 14 Nov metadata`
+An AI model read the attached official PDFs ("Verified by an AI model reading attached official PDFs", `research/india/verification-log.md:3`). An independent non-lawyer read all five specific passages in full and reported that all match (`r.10(1)`, `r.8(3)`, `S.O. 5458(E)` (all three pages), `CERT-In FAQ Q35/Q36`, `e-Gazette 14 Nov metadata`). Whether pack wording was compared to the PDFs is not confirmed.
 
 Not yet reviewed by legal counsel.
 

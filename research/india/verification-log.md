@@ -3,7 +3,7 @@
 Verified by an AI model reading attached official PDFs (report: verification-report-2026-10-29.md).
 Not legal advice. No check here means an app is "compliant".
 
-Human spot-checks pending for: r.10(1), r.8(3), S.O. 5458(E) (full text), CERT-In FAQ Q35/Q36, e-Gazette 14 Nov metadata.
+The five passages below (r.10(1), r.8(3), S.O. 5458(E) (all three pages), CERT-In FAQ Q35/Q36, e-Gazette 14 Nov metadata) were read in full by an independent non-lawyer reader who reported that all match; whether pack wording was compared to the PDFs is not confirmed; formal review by legal counsel remains pending (Q1 stays open).
 
 | id | provision | result | verified_against | verified_by | what differs | date |
 |---|---|---|---|---|---|---|
@@ -36,3 +36,15 @@ These five items were re-checked against excerpts you supplied. Mark them human-
 | S.O. 5458(E) | human-read (2026-10-29), full-text scan pending | file 06 | two substitutions only |
 | CERT-In FAQ Q35/Q36 | human-read (2026-10-29) | file 07c | confirmed, answers kept distinct |
 | e-Gazette metadata | human-read (2026-10-29) | files 01 p.1/p.41, 03 p.1/p.2 | IDs and signature times recorded |
+
+## Human checks
+
+An independent non-lawyer reader read all five passages in full and reported that all match. Whether pack wording was compared to the PDFs is not confirmed. Not reviewed by legal counsel. Q1 (13 vs 14 Nov) stays open. The 2026-10-29 human-read rows above have no recorded reader; whether they are the same read is not stated.
+
+| passage | check_ids | reader | date | outcome | pack_wording_comparison |
+|---|---|---|---|---|---|
+| r.10(1) | IN-DPDP-011 | independent non-lawyer | not recorded | matches (as reported) | not confirmed |
+| r.8(3) | IN-DPDP-013 | independent non-lawyer | not recorded | matches (as reported) | not confirmed |
+| S.O. 5458(E) (all three pages) | IN-DPDP-011 | independent non-lawyer | not recorded | matches (as reported); full-text scan of all three pages now reported done by the independent reader | not confirmed |
+| CERT-In FAQ Q35/Q36 | IN-CERTIN-001 | independent non-lawyer | not recorded | matches (as reported) | not confirmed |
+| e-Gazette 14 Nov metadata | to be confirmed | independent non-lawyer | not recorded | metadata read, matches as reported; Q1 (which date is the legal publication date) remains open | not confirmed |

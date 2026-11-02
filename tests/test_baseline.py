@@ -1363,3 +1363,194 @@ def test_unreadable_code_file_counted_in_m(tmp_path: Path):
     assert expected_m in bp_notes
     assert "was not analysed because no auth" not in bp_notes
 
+
+# -------------------------------------------------------------------------
+# Other Source Files Accounting Tests
+# -------------------------------------------------------------------------
+
+def test_other_source_files_singular(tmp_path: Path):
+    """Single unanalysed other source file asserts singular sentence."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "auth.js").write_text(
+        "const argon2 = require('argon2');\nasync function hash(p) { return await argon2.hash(p); }\n",
+        encoding="utf-8",
+    )
+    (app_dir / "Calculator.java").write_text(
+        "public class Calculator { public int add(int a, int b) { return a + b; } }\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    expected_singular = "Other source file not analysed: 1 .java."
+    assert expected_singular in findings["IN-BP-003"]["notes"]
+    assert expected_singular in findings["IN-DPDP-013"]["notes"]
+    assert "Other source files not analysed" not in findings["IN-BP-003"]["notes"]
+
+
+def test_other_source_files_plural_and_ordering(tmp_path: Path):
+    """Multiple other source files assert plural sentence ordered by count desc, then extension asc."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "auth.js").write_text("console.log('auth');", encoding="utf-8")
+
+    # 3 .java files
+    for i in range(3):
+        (app_dir / f"App{i}.java").write_text("public class App {}", encoding="utf-8")
+
+    # 2 .go files
+    for i in range(2):
+        (app_dir / f"worker{i}.go").write_text("package main", encoding="utf-8")
+
+    # 1 .rs file
+    (app_dir / "lib.rs").write_text("pub fn run() {}", encoding="utf-8")
+
+    # Tie breaker: 1 .cs and 1 .kt (both count 1, .cs should precede .kt, .rs before or after)
+    (app_dir / "Program.cs").write_text("class Program {}", encoding="utf-8")
+    (app_dir / "Service.kt").write_text("class Service", encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    # Ordering: 3 .java, 2 .go, 1 .cs, 1 .kt, 1 .rs
+    expected_plural = "Other source files not analysed: 3 .java, 2 .go, 1 .cs, 1 .kt, 1 .rs."
+    assert expected_plural in findings["IN-BP-003"]["notes"]
+    assert expected_plural in findings["IN-DPDP-013"]["notes"]
+
+
+def test_other_source_files_no_double_counting(tmp_path: Path):
+    """UserAuth.java recognised by basename rule is scanned; Service.java is unanalysed and counted."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    # UserAuth.java has "auth" in filename and bcrypt hash -> recognised as auth_code
+    (app_dir / "UserAuth.java").write_text(
+        "import org.mindrot.jbcrypt.BCrypt;\n"
+        "public class UserAuth {\n"
+        "    public String hash(String password) {\n"
+        "        return BCrypt.hashpw(password, BCrypt.gensalt());\n"
+        "    }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    # Service.java has no auth keyword in filename -> unrecognised
+    (app_dir / "Service.java").write_text(
+        "public class Service { public void doWork() {} }\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    dpdp = findings["IN-DPDP-013"]
+    bp = findings["IN-BP-003"]
+
+    # UserAuth.java is scanned, not unanalysed
+    assert any("UserAuth.java" in ev for ev in dpdp["evidence"])
+    assert "files scanned (1)" in dpdp["notes"]
+
+    # Only Service.java is unanalysed (count is 1 .java, NOT 2 .java)
+    expected_singular = "Other source file not analysed: 1 .java."
+    assert expected_singular in bp["notes"]
+    assert expected_singular in dpdp["notes"]
+    assert "2 .java" not in bp["notes"]
+
+
+def test_other_source_files_omitted_when_zero(tmp_path: Path):
+    """When no other source files are present, the sentence is omitted."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "auth.js").write_text("const x = 1;", encoding="utf-8")
+    (app_dir / "helper.js").write_text("const y = 2;", encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_notes = findings["IN-BP-003"]["notes"]
+    dpdp_notes = findings["IN-DPDP-013"]["notes"]
+
+    assert "Other source file not analysed" not in bp_notes
+    assert "Other source files not analysed" not in bp_notes
+    assert "Other source file not analysed" not in dpdp_notes
+    assert "Other source files not analysed" not in dpdp_notes
+
+
+def test_other_source_files_vendor_and_node_modules_pruned(tmp_path: Path):
+    """Other source files inside vendor or node_modules are pruned and not counted."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "auth.js").write_text("const x = 1;", encoding="utf-8")
+
+    vendor = app_dir / "vendor" / "java_lib"
+    vendor.mkdir(parents=True)
+    (vendor / "Lib.java").write_text("class Lib {}", encoding="utf-8")
+
+    nm = app_dir / "node_modules" / "go_tool"
+    nm.mkdir(parents=True)
+    (nm / "tool.go").write_text("package tool", encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_notes = findings["IN-BP-003"]["notes"]
+    assert "Other source file not analysed" not in bp_notes
+    assert "Other source files not analysed" not in bp_notes
+
+
+def test_other_source_files_over_1mb_java_counted(tmp_path: Path):
+    """A .java file over 1 MB is counted in other source files not analysed."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "auth.js").write_text("const x = 1;", encoding="utf-8")
+    (app_dir / "Big.java").write_text("//" + "z" * (MAX_FILE_SIZE + 10), encoding="utf-8")
+
+    doc = evaluate_baseline(app_dir)
+    findings = {f["check_id"]: f for f in doc["findings"]}
+
+    bp_notes = findings["IN-BP-003"]["notes"]
+    dpdp_notes = findings["IN-DPDP-013"]["notes"]
+
+    expected_singular = "Other source file not analysed: 1 .java."
+    assert expected_singular in bp_notes
+    assert expected_singular in dpdp_notes
+
+    # M sentence applies only to CODE_EXTENSIONS (.js .jsx .ts .tsx .py .php)
+    assert "code file was skipped because it exceeded 1 MB" not in bp_notes
+    assert "code files were skipped because they exceeded 1 MB" not in bp_notes
+
+
+def test_other_source_files_mutation_drops_java(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Mutation test: monkeypatch removing .java from OTHER_SOURCE_EXTENSIONS causes sentence to disappear."""
+    import scripts.baseline
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    (app_dir / "auth.js").write_text("const x = 1;", encoding="utf-8")
+    (app_dir / "Calculator.java").write_text("class Calculator {}", encoding="utf-8")
+
+    # Baseline run with original set
+    doc_normal = evaluate_baseline(app_dir)
+    normal_notes = doc_normal["findings"][1]["notes"]
+    assert "Other source file not analysed: 1 .java." in normal_notes
+
+    # Mutated run with .java removed from OTHER_SOURCE_EXTENSIONS
+    mutated_set = set(scripts.baseline.OTHER_SOURCE_EXTENSIONS) - {".java"}
+    assert mutated_set != scripts.baseline.OTHER_SOURCE_EXTENSIONS, "Mutated set must differ from original"
+
+    monkeypatch.setattr(scripts.baseline, "OTHER_SOURCE_EXTENSIONS", mutated_set)
+    doc_mutated = evaluate_baseline(app_dir)
+    mutated_notes = doc_mutated["findings"][1]["notes"]
+
+    assert mutated_notes != normal_notes, "Mutated notes must differ from normal notes"
+    assert "Other source file not analysed" not in mutated_notes
+    assert "Other source files not analysed" not in mutated_notes
+
+

@@ -40,6 +40,18 @@ RULE_6_CATEGORIES = [
 
 AUTH_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".py", ".php", ".go", ".rb", ".java"}
 CODE_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".py", ".php"}
+OTHER_SOURCE_EXTENSIONS = {
+    ".java",
+    ".go",
+    ".rb",
+    ".cs",
+    ".kt",
+    ".swift",
+    ".dart",
+    ".rs",
+    ".c",
+    ".cpp",
+}
 AUTH_NAME_KEYWORDS = ("auth", "login", "password", "user", "account", "signup", "session")
 CONTENT_PASSWORD_REGEX = re.compile(r"""(?i)password|passwd|\bpwd\b""")
 CONTENT_HASH_REGEX = re.compile(
@@ -230,6 +242,7 @@ def scan_directory(
     int,                   # files_skipped
     int,                   # unanalysed_code_files
     int,                   # oversize_unreadable_code_files
+    Dict[str, int],        # other_source_files
 ]:
     """Scan directory for technical configurations, safeguards, and baseline markers."""
     dpdp_matches: Dict[str, List[str]] = {cat: [] for cat in RULE_6_CATEGORIES}
@@ -240,6 +253,7 @@ def scan_directory(
     files_skipped = 0
     unanalysed_code_files = 0
     oversize_unreadable_code_files = 0
+    other_source_files: Dict[str, int] = {}
 
     for root, dirs, files in os.walk(app_dir, followlinks=False):
         # Prune skip directories in-place
@@ -259,31 +273,43 @@ def scan_directory(
                 st = file_path.stat()
                 if st.st_size > MAX_FILE_SIZE:
                     files_skipped += 1
-                    if file_path.suffix.lower() in CODE_EXTENSIONS:
+                    ext = file_path.suffix.lower()
+                    if ext in CODE_EXTENSIONS:
                         oversize_unreadable_code_files += 1
+                    elif ext in OTHER_SOURCE_EXTENSIONS:
+                        other_source_files[ext] = other_source_files.get(ext, 0) + 1
                     continue
             except OSError:
                 files_skipped += 1
-                if file_path.suffix.lower() in CODE_EXTENSIONS:
+                ext = file_path.suffix.lower()
+                if ext in CODE_EXTENSIONS:
                     oversize_unreadable_code_files += 1
+                elif ext in OTHER_SOURCE_EXTENSIONS:
+                    other_source_files[ext] = other_source_files.get(ext, 0) + 1
                 continue
 
             recognised, kind = is_recognised_file(file_path, app_dir=app_dir)
             if not recognised:
                 files_skipped += 1
-                if file_path.suffix.lower() in CODE_EXTENSIONS:
+                ext = file_path.suffix.lower()
+                if ext in CODE_EXTENSIONS:
                     if kind == "unreadable":
                         oversize_unreadable_code_files += 1
                     else:
                         unanalysed_code_files += 1
+                elif ext in OTHER_SOURCE_EXTENSIONS:
+                    other_source_files[ext] = other_source_files.get(ext, 0) + 1
                 continue
 
             try:
                 raw_content = file_path.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 files_skipped += 1
-                if file_path.suffix.lower() in CODE_EXTENSIONS:
+                ext = file_path.suffix.lower()
+                if ext in CODE_EXTENSIONS:
                     oversize_unreadable_code_files += 1
+                elif ext in OTHER_SOURCE_EXTENSIONS:
+                    other_source_files[ext] = other_source_files.get(ext, 0) + 1
                 continue
 
             files_scanned += 1
@@ -538,6 +564,7 @@ def scan_directory(
         files_skipped,
         unanalysed_code_files,
         oversize_unreadable_code_files,
+        other_source_files,
     )
 
 
@@ -555,6 +582,7 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         files_skipped,
         unanalysed_code_files,
         oversize_unreadable_code_files,
+        other_source_files,
     ) = scan_directory(app_path)
 
     if unanalysed_code_files == 1:
@@ -570,6 +598,17 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         skipped_code_sentence = f"{oversize_unreadable_code_files} code files were skipped because they exceeded 1 MB or could not be read. "
     else:
         skipped_code_sentence = ""
+
+    total_other = sum(other_source_files.values())
+    if total_other == 1:
+        ext, count = next(iter(other_source_files.items()))
+        other_source_sentence = f"Other source file not analysed: {count} {ext}. "
+    elif total_other > 1:
+        sorted_items = sorted(other_source_files.items(), key=lambda x: (-x[1], x[0]))
+        items_str = ", ".join(f"{count} {ext}" for ext, count in sorted_items)
+        other_source_sentence = f"Other source files not analysed: {items_str}. "
+    else:
+        other_source_sentence = ""
 
     # -------------------------------------------------------------------------
     # IN-DPDP-013: Reasonable security safeguards and access logging (LAW, assisted)
@@ -592,6 +631,7 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"auth code (*.js, *.jsx, *.ts, *.tsx, *.py, *.php, *.go, *.rb, *.java with auth/login/password/user/account/signup/session in filename; *.js, *.jsx, *.ts, *.tsx, *.py, *.php with those keywords in parent folder; or *.js, *.jsx, *.ts, *.tsx, *.py, *.php with password and hashing keywords in content): password hashing algorithms; "
         f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
         f"{unanalysed_sentence}"
+        f"{other_source_sentence}"
         f"{skipped_code_sentence}"
         f"This is not an assessment of the application's security."
     )
@@ -640,6 +680,7 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"auth code (*.js, *.jsx, *.ts, *.tsx, *.py, *.php, *.go, *.rb, *.java with auth/login/password/user/account/signup/session in filename; *.js, *.jsx, *.ts, *.tsx, *.py, *.php with those keywords in parent folder; or *.js, *.jsx, *.ts, *.tsx, *.py, *.php with password and hashing keywords in content): password hashing algorithms; "
         f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
         f"{unanalysed_sentence}"
+        f"{other_source_sentence}"
         f"{skipped_code_sentence}"
         f"Only the listed patterns are checked; other password hashing code may not be detected. Calls split across several lines may not be detected. "
         f"This is not an assessment of the application's security."

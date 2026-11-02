@@ -184,6 +184,7 @@ Q-numbers refer to research/india/open-questions.md.
 ## Known Limits
 
 - **Web Stacks Only:** Code checks cover web stacks only; Dart/Flutter, Kotlin and Swift are not recognised.
+- **Committed secrets:** Only string-literal assignments in recognised auth code, web config, container config and .env* files are flagged, and only the key name is shown. Matches in test or spec files are counted in the notes, not listed. Values that look like function calls, SQL, a leading $ or template interpolation are not flagged, so some real secrets can be missed and some non-secrets can still be flagged.
 - **Presence != Adequacy:** Keyword and presence detection identifies whether statutory elements, policy pages, or controls exist; it does not evaluate the substantive legal adequacy of notice wording or policy terms.
 - **Unauthenticated Crawl Scope:** The crawler inspects publicly reachable links only. It executes no logins, submits no forms, and clicks only same-origin navigation links.
 - **Implied Consent Undetected:** Implied or narrative consent notices embedded solely in descriptive text are not detected (known limitation from testing).

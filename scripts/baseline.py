@@ -68,8 +68,33 @@ SECRET_KEY_REGEX = re.compile(
     r"""(?i)\b[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*\b"""
 )
 
+MESSAGE_KEY_SUFFIXES = (
+    "message",
+    "msg",
+    "error",
+    "err",
+    "label",
+    "prompt",
+    "placeholder",
+    "hint",
+    "help",
+    "tooltip",
+    "title",
+    "text",
+    "desc",
+    "description",
+)
+
+SQL_KEYWORDS_REGEX = re.compile(
+    r"""(?i)\b(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE|DROP\s+TABLE|WHERE|FROM)\b"""
+)
+
+CALL_PATTERN_REGEX = re.compile(r"""(?i)\b[a-zA-Z_][a-zA-Z0-9_]*\s*\(""")
+
+EXPRESSION_AFTER_REGEX = re.compile(r"""^\s*(?:\+|\.|\?|\(|\x7C\x7C|&&)""")
+
 SECRET_ASSIGNMENT_REGEX = re.compile(
-    r"""(?i)\b([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*)\s*[:=]\s*(['"])(.*?)\2"""
+    r"""(?i)(?:\[\s*(['"])([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*)\1\s*\]\s*=\s*(['"])(.*?)\3)|(?:(['"]?)\b([A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD|PASS)[A-Z0-9_]*)\5\s*[:=]\s*(['"])(.*?)\7)"""
 )
 
 CONNECTION_STRING_CREDENTIAL_REGEX = re.compile(
@@ -137,6 +162,39 @@ def is_placeholder_value(val: str) -> bool:
     return False
 
 
+def is_inside_string(prefix: str) -> bool:
+    """Check if prefix has unclosed single, double, or backtick quote."""
+    in_single = False
+    in_double = False
+    in_backtick = False
+    escaped = False
+    for ch in prefix:
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == "'" and not in_double and not in_backtick:
+            in_single = not in_single
+        elif ch == '"' and not in_single and not in_backtick:
+            in_double = not in_double
+        elif ch == '`' and not in_single and not in_double:
+            in_backtick = not in_backtick
+    return in_single or in_double or in_backtick
+
+
+def is_test_or_spec_file(rel_path_str: str, file_name: str) -> bool:
+    """Check if file is in a test folder (/test/, /tests/, /__tests__/) or filename contains .test. or .spec."""
+    norm = f"/{rel_path_str.replace('\\', '/')}".lower()
+    if any(f"/{d}/" in norm for d in ("test", "tests", "__tests__")):
+        return True
+    name_lower = file_name.lower()
+    if ".test." in name_lower or ".spec." in name_lower:
+        return True
+    return False
+
+
 def extract_secret_info(line: str) -> Optional[Tuple[str, str]]:
     """
     Check if a line in code or configuration contains a committed secret assignment.
@@ -149,15 +207,50 @@ def extract_secret_info(line: str) -> Optional[Tuple[str, str]]:
 
     m_conn = CONN_ASSIGNMENT_REGEX.search(line)
     if m_conn:
-        key_name = m_conn.group(1).strip()
-        return ("connection_string", key_name)
+        prefix = line[:m_conn.start(1)]
+        if not is_inside_string(prefix):
+            key_name = m_conn.group(1).strip()
+            return ("connection_string", key_name)
 
     m_sec = SECRET_ASSIGNMENT_REGEX.search(line)
     if m_sec:
-        key_name = m_sec.group(1).strip()
-        val = m_sec.group(3).strip()
-        if not is_placeholder_value(val):
-            return ("secret", key_name)
+        prefix = line[:m_sec.start()]
+        if is_inside_string(prefix):
+            return None
+
+        # Check which branch matched (subscript vs bare/quoted key)
+        if m_sec.group(2) is not None:
+            key_name = m_sec.group(2).strip()
+            val = m_sec.group(4).strip()
+        else:
+            key_name = m_sec.group(6).strip()
+            val = m_sec.group(8).strip()
+
+        # (b) Key name message/label/error filter
+        key_clean = key_name.rstrip("_").lower()
+        if any(key_clean.endswith(sfx) for sfx in MESSAGE_KEY_SUFFIXES):
+            return None
+
+        # (a) Must be non-empty string literal and not a placeholder
+        if not val or is_placeholder_value(val):
+            return None
+
+        # (c) Must not be an SQL string, template interpolation, variable reference, or call pattern
+        if SQL_KEYWORDS_REGEX.search(val):
+            return None
+        if val.startswith("$") or (val.startswith("%") and val.endswith("%")):
+            return None
+        if "${" in val or "#{" in val:
+            return None
+        if CALL_PATTERN_REGEX.search(val):
+            return None
+
+        # (c) Check if closing quote is followed by expression operators (+, ., ?, (, ||, &&)
+        after = line[m_sec.end():]
+        if EXPRESSION_AFTER_REGEX.search(after):
+            return None
+
+        return ("secret", key_name)
 
     return None
 
@@ -243,6 +336,7 @@ def scan_directory(
     int,                   # unanalysed_code_files
     int,                   # oversize_unreadable_code_files
     Dict[str, int],        # other_source_files
+    int,                   # test_secrets_count
 ]:
     """Scan directory for technical configurations, safeguards, and baseline markers."""
     dpdp_matches: Dict[str, List[str]] = {cat: [] for cat in RULE_6_CATEGORIES}
@@ -254,6 +348,7 @@ def scan_directory(
     unanalysed_code_files = 0
     oversize_unreadable_code_files = 0
     other_source_files: Dict[str, int] = {}
+    test_secrets_count = 0
 
     for root, dirs, files in os.walk(app_dir, followlinks=False):
         # Prune skip directories in-place
@@ -315,6 +410,7 @@ def scan_directory(
             files_scanned += 1
             rel_path_str = file_path.relative_to(app_dir).as_posix()
             lines = raw_content.splitlines()
+            is_test_file = is_test_or_spec_file(rel_path_str, file_path.name)
 
             # --- 1. Environment / Committed Secrets File ---
             if kind == "env":
@@ -334,20 +430,28 @@ def scan_directory(
 
                         # (b) Connection string with credentials
                         if CONNECTION_STRING_CREDENTIAL_REGEX.search(val_str):
-                            env_secret_count += 1
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {key_name} (value not shown)"
-                            )
+                            if is_test_file:
+                                test_secrets_count += 1
+                            else:
+                                env_secret_count += 1
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {key_name} (value not shown)"
+                                )
                         # (a) Secret key name with non-placeholder value
                         elif SECRET_KEY_REGEX.search(key_name) and not is_placeholder_value(val_str):
-                            env_secret_count += 1
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {key_name} (value not shown)"
-                            )
+                            if is_test_file:
+                                test_secrets_count += 1
+                            else:
+                                env_secret_count += 1
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed secret in {key_name} (value not shown)"
+                                )
                         # (c) Other assignments
                         else:
                             other_assignment_count += 1
 
+                if is_test_file:
+                    continue
                 if other_assignment_count > 0:
                     noun = "other assignment" if other_assignment_count == 1 else "other assignments"
                     dpdp_matches["committed secrets"].append(
@@ -368,15 +472,18 @@ def scan_directory(
                     line_no = idx + 1
                     secret_info = extract_secret_info(line)
                     if secret_info:
-                        sec_kind, sec_key = secret_info
-                        if sec_kind == "connection_string":
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
-                            )
+                        if is_test_file:
+                            test_secrets_count += 1
                         else:
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
-                            )
+                            sec_kind, sec_key = secret_info
+                            if sec_kind == "connection_string":
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
+                                )
+                            else:
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
+                                )
 
                     hmac_match = HMAC_HASH_REGEX.search(line)
                     weak_match = WEAK_HASH_REGEX.search(line)
@@ -433,15 +540,18 @@ def scan_directory(
                     line_no = idx + 1
                     secret_info = extract_secret_info(line)
                     if secret_info:
-                        sec_kind, sec_key = secret_info
-                        if sec_kind == "connection_string":
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
-                            )
+                        if is_test_file:
+                            test_secrets_count += 1
                         else:
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
-                            )
+                            sec_kind, sec_key = secret_info
+                            if sec_kind == "connection_string":
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
+                                )
+                            else:
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
+                                )
 
                     if HSTS_HEADER_REGEX.search(line):
                         has_hsts = True
@@ -545,15 +655,18 @@ def scan_directory(
                     line_no = idx + 1
                     secret_info = extract_secret_info(line)
                     if secret_info:
-                        sec_kind, sec_key = secret_info
-                        if sec_kind == "connection_string":
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
-                            )
+                        if is_test_file:
+                            test_secrets_count += 1
                         else:
-                            dpdp_matches["committed secrets"].append(
-                                f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
-                            )
+                            sec_kind, sec_key = secret_info
+                            if sec_kind == "connection_string":
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed credential in connection string for {sec_key} (value not shown)"
+                                )
+                            else:
+                                dpdp_matches["committed secrets"].append(
+                                    f"{rel_path_str}:{line_no}: committed secrets: committed secret in {sec_key} (value not shown)"
+                                )
                 continue
 
     return (
@@ -565,6 +678,7 @@ def scan_directory(
         unanalysed_code_files,
         oversize_unreadable_code_files,
         other_source_files,
+        test_secrets_count,
     )
 
 
@@ -583,7 +697,15 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         unanalysed_code_files,
         oversize_unreadable_code_files,
         other_source_files,
+        test_secrets_count,
     ) = scan_directory(app_path)
+
+    if test_secrets_count == 1:
+        test_secrets_sentence = "1 secret-like assignment in test or spec files not listed. "
+    elif test_secrets_count > 1:
+        test_secrets_sentence = f"{test_secrets_count} secret-like assignments in test or spec files not listed. "
+    else:
+        test_secrets_sentence = ""
 
     if unanalysed_code_files == 1:
         unanalysed_sentence = "1 code file (.js .jsx .ts .tsx .py .php) in recognised extensions was not analysed because no auth or password-hashing signal was found. "
@@ -629,7 +751,8 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"storage.rules (*.rules): public write permissions and authorization conditions; "
         f"logging.json (*log*.json): log retention days and logging configuration; "
         f"auth code (*.js, *.jsx, *.ts, *.tsx, *.py, *.php, *.go, *.rb, *.java with auth/login/password/user/account/signup/session in filename; *.js, *.jsx, *.ts, *.tsx, *.py, *.php with those keywords in parent folder; or *.js, *.jsx, *.ts, *.tsx, *.py, *.php with password and hashing keywords in content): password hashing algorithms; "
-        f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
+        f"committed secrets: checked in recognised auth code, web config (*.conf), container config (Dockerfile, docker-compose*.yml/yaml), and .env* files; only string-literal assignments are flagged (key names only are shown; values are never displayed). Other file types encountered were not analysed. "
+        f"{test_secrets_sentence}"
         f"{unanalysed_sentence}"
         f"{other_source_sentence}"
         f"{skipped_code_sentence}"
@@ -678,7 +801,8 @@ def evaluate_baseline(app_dir: str | Path) -> Dict[str, Any]:
         f"storage.rules (*.rules): public write permissions and authorization conditions; "
         f"logging.json (*log*.json): log retention days and logging configuration; "
         f"auth code (*.js, *.jsx, *.ts, *.tsx, *.py, *.php, *.go, *.rb, *.java with auth/login/password/user/account/signup/session in filename; *.js, *.jsx, *.ts, *.tsx, *.py, *.php with those keywords in parent folder; or *.js, *.jsx, *.ts, *.tsx, *.py, *.php with password and hashing keywords in content): password hashing algorithms; "
-        f".env*: committed configuration and secrets. Other file types encountered were not analysed. "
+        f"committed secrets: checked in recognised auth code, web config (*.conf), container config (Dockerfile, docker-compose*.yml/yaml), and .env* files; only string-literal assignments are flagged (key names only are shown; values are never displayed). Other file types encountered were not analysed. "
+        f"{test_secrets_sentence}"
         f"{unanalysed_sentence}"
         f"{other_source_sentence}"
         f"{skipped_code_sentence}"

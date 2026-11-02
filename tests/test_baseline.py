@@ -52,6 +52,7 @@ if str(WORKSPACE_ROOT) not in sys.path:
 from scripts.baseline import (
     MAX_FILE_SIZE,
     evaluate_baseline,
+    extract_secret_info,
     is_placeholder_value,
     is_secret_assignment,
 )
@@ -1552,5 +1553,160 @@ def test_other_source_files_mutation_drops_java(tmp_path: Path, monkeypatch: pyt
     assert mutated_notes != normal_notes, "Mutated notes must differ from normal notes"
     assert "Other source file not analysed" not in mutated_notes
     assert "Other source files not analysed" not in mutated_notes
+
+
+def test_committed_secrets_eight_lines_table():
+    """Verify extract_secret_info on the benchmark 8 test lines."""
+    # 1. Object literal
+    res = extract_secret_info("{ username: 'admin', password: 'hunter2' }")
+    assert res == ("secret", "password")
+
+    # 2. Preceding statement on same line
+    res = extract_secret_info('const a = 1; const password = "hunter2";')
+    assert res == ("secret", "password")
+
+    # 3. Quoted key in JSON/object
+    res = extract_secret_info('"password": "hunter2abc"')
+    assert res == ("secret", "password")
+
+    # 4. Subscript assignment
+    res = extract_secret_info('config["password"] = "hunter2abc"')
+    assert res == ("secret", "password")
+
+    # 5. Assignment with trailing inline comment
+    res = extract_secret_info('DB_PASS = "hunter2abc"  # prod')
+    assert res == ("secret", "DB_PASS")
+
+    # 6. Variable reference (not a string literal) -> not flagged
+    assert extract_secret_info('password = req.body.password') is None
+
+    # 7. SQL query string incorporating variable -> not flagged
+    assert extract_secret_info('$query = "SELECT * FROM users WHERE password = \'$pass\'";') is None
+
+    # 8. UI error message key -> not flagged
+    assert extract_secret_info('invalidPasswordErrorMessage: "Invalid password"') is None
+
+
+def test_committed_secrets_message_key_and_sql_and_placeholder_exclusions():
+    """Verify message key suffixes, SQL keywords, and placeholder exclusions."""
+    # Message / UI label suffixes
+    assert extract_secret_info('passwordError = "Too short"') is None
+    assert extract_secret_info('password_hint: "Mother maiden name"') is None
+    assert extract_secret_info('const passwordPrompt = "Enter password:";') is None
+    assert extract_secret_info('passwordLabel: "Password"') is None
+    assert extract_secret_info('password_placeholder: "Password"') is None
+    assert extract_secret_info('token_desc = "Auth token"') is None
+
+    # SQL query strings and expressions
+    assert extract_secret_info('const sql = "INSERT INTO users (password) VALUES (\'" + pwd + "\')";') is None
+    assert extract_secret_info('$insert = "UPDATE users SET password = \'$new_pass\' WHERE id = 1";') is None
+    assert extract_secret_info("models.query(`SELECT * FROM users WHERE password = '${hash(pwd)}'`);") is None
+
+    # Function call pattern in value
+    assert extract_secret_info('const API_KEY = "env(\'MY_KEY\')";') is None
+    assert extract_secret_info('const TOKEN = "getAuthToken()";') is None
+
+    # Placeholders
+    assert extract_secret_info('API_KEY = "changeme"') is None
+    assert extract_secret_info('API_KEY = "xxxxxxxx"') is None
+    assert extract_secret_info('PASSWORD = "<your-password-here>"') is None
+
+
+def test_committed_secrets_env_unchanged_and_value_never_printed(tmp_path: Path):
+    """Verify .env behavior remains intact and secret values are never printed in findings JSON."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    secret_auth_val = "SECRET_AUTH_VAL_991188"
+    secret_env_val = "SECRET_ENV_VAL_334455"
+    conn_val = "SECRET_CONN_VAL_556677"
+
+    (app_dir / "auth.js").write_text(
+        f'const AUTH_TOKEN = "{secret_auth_val}";\n'
+        f'const DB_URI = "postgres://user:{conn_val}@localhost:5432/mydb";\n',
+        encoding="utf-8",
+    )
+    (app_dir / ".env").write_text(
+        f"APP_SECRET={secret_env_val}\n"
+        "APP_PLACEHOLDER=changeme\n"
+        "DATABASE_URL=postgres://user:pass@localhost:5432/test\n"
+        "OTHER_VAR_1=foo\n"
+        "OTHER_VAR_2=bar\n",
+        encoding="utf-8",
+    )
+
+    doc = evaluate_baseline(app_dir)
+    json_text = json.dumps(doc)
+
+    # Secret values never printed anywhere in findings JSON
+    assert secret_auth_val not in json_text
+    assert secret_env_val not in json_text
+    assert conn_val not in json_text
+
+    dpdp = next(f for f in doc["findings"] if f["check_id"] == "IN-DPDP-013")
+    ev = dpdp["evidence"]
+
+    # Redacted evidence lines
+    assert any("auth.js:1: committed secrets: committed secret in AUTH_TOKEN (value not shown)" in line for line in ev)
+    assert any("auth.js:2: committed secrets: committed credential in connection string for DB_URI (value not shown)" in line for line in ev)
+    assert any(".env:1: committed secrets: committed secret in APP_SECRET (value not shown)" in line for line in ev)
+    assert any(".env:3: committed secrets: committed credential in connection string for DATABASE_URL (value not shown)" in line for line in ev)
+    assert any(".env: committed secrets: committed environment file with 3 other assignments (keys and values not shown)" in line for line in ev)
+
+
+def test_committed_secrets_test_files_rule(tmp_path: Path):
+    """Verify secret assignments in test or spec files are counted in notes, not listed in evidence."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+
+    # 1. No test files -> notes sentence omitted
+    (app_dir / "auth.js").write_text('const API_KEY = "production_secret_123";\n', encoding="utf-8")
+    doc_zero = evaluate_baseline(app_dir)
+    notes_zero = doc_zero["findings"][0]["notes"]
+    assert "secret-like assignment in test or spec files not listed" not in notes_zero
+    ev_zero = doc_zero["findings"][0]["evidence"]
+    assert any("auth.js:1: committed secrets: committed secret in API_KEY (value not shown)" in line for line in ev_zero)
+
+    # 2. Singular: 1 secret in a test file
+    test_dir = app_dir / "tests"
+    test_dir.mkdir()
+    (test_dir / "test_auth.js").write_text('const TEST_KEY = "test_fixture_secret_456";\n', encoding="utf-8")
+    doc_single = evaluate_baseline(app_dir)
+    notes_single = doc_single["findings"][0]["notes"]
+    assert "1 secret-like assignment in test or spec files not listed." in notes_single
+    assert "secret-like assignments" not in notes_single
+    ev_single = doc_single["findings"][0]["evidence"]
+    # Test fixture NOT listed in evidence
+    assert not any("TEST_KEY" in line for line in ev_single)
+    # Production secret still in evidence
+    assert any("auth.js:1: committed secrets: committed secret in API_KEY (value not shown)" in line for line in ev_single)
+
+    # 3. Plural: 2 secrets across test and spec files
+    (app_dir / "login.spec.js").write_text('const MOCK_TOKEN = "mock_secret_token_789";\n', encoding="utf-8")
+    doc_plural = evaluate_baseline(app_dir)
+    notes_plural = doc_plural["findings"][0]["notes"]
+    assert "2 secret-like assignments in test or spec files not listed." in notes_plural
+    ev_plural = doc_plural["findings"][0]["evidence"]
+    assert not any("TEST_KEY" in line for line in ev_plural)
+    assert not any("MOCK_TOKEN" in line for line in ev_plural)
+    assert any("auth.js:1: committed secrets: committed secret in API_KEY (value not shown)" in line for line in ev_plural)
+
+
+def test_message_key_filter_mutation_test(monkeypatch: pytest.MonkeyPatch):
+    """Mutation test: emptying MESSAGE_KEY_SUFFIXES causes message keys to be flagged as secrets."""
+    import scripts.baseline
+
+    test_line = 'invalidPasswordErrorMessage: "Invalid password provided"'
+
+    # Normal baseline: message key is NOT flagged as a secret
+    assert scripts.baseline.extract_secret_info(test_line) is None
+
+    # Mutate MESSAGE_KEY_SUFFIXES to empty tuple
+    mutated_suffixes = ()
+    assert mutated_suffixes != scripts.baseline.MESSAGE_KEY_SUFFIXES, "Mutated suffixes must differ from original"
+
+    monkeypatch.setattr(scripts.baseline, "MESSAGE_KEY_SUFFIXES", mutated_suffixes)
+    mutated_res = scripts.baseline.extract_secret_info(test_line)
+    assert mutated_res == ("secret", "invalidPasswordErrorMessage"), "Under mutation, message key must be erroneously flagged"
 
 

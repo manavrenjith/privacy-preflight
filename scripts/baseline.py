@@ -186,7 +186,8 @@ def is_inside_string(prefix: str) -> bool:
 
 def is_test_or_spec_file(rel_path_str: str, file_name: str) -> bool:
     """Check if file is in a test folder (/test/, /tests/, /__tests__/) or filename contains .test. or .spec."""
-    norm = f"/{rel_path_str.replace('\\', '/')}".lower()
+    clean_path = rel_path_str.replace("\\", "/")
+    norm = f"/{clean_path}".lower()
     if any(f"/{d}/" in norm for d in ("test", "tests", "__tests__")):
         return True
     name_lower = file_name.lower()

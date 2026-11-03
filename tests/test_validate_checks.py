@@ -322,3 +322,61 @@ def test_cli_execution():
     assert "Active BEST PRACTICE checks: 4" in proc.stdout
     assert "Proposed checks:            1" in proc.stdout
     assert "Total failures:             0" in proc.stdout
+
+
+def test_missing_config_effective_dates_raises_error(temp_workspace: Path):
+    """Missing config/effective-dates.yaml raises FileNotFoundError with reinstall guidance."""
+    (temp_workspace / "config" / "effective-dates.yaml").unlink()
+    with pytest.raises(FileNotFoundError) as exc_info:
+        validate_jurisdiction("india", base_dir=temp_workspace)
+    assert "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file." in str(exc_info.value)
+
+
+def test_missing_verification_log_raises_error(temp_workspace: Path):
+    """Missing research/india/verification-log.md raises FileNotFoundError with reinstall guidance."""
+    (temp_workspace / "research" / "india" / "verification-log.md").unlink()
+    with pytest.raises(FileNotFoundError) as exc_info:
+        validate_jurisdiction("india", base_dir=temp_workspace)
+    assert "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file." in str(exc_info.value)
+
+
+def test_missing_open_questions_raises_error(temp_workspace: Path):
+    """Missing research/india/open-questions.md raises FileNotFoundError with reinstall guidance."""
+    (temp_workspace / "research" / "india" / "open-questions.md").unlink()
+    with pytest.raises(FileNotFoundError) as exc_info:
+        validate_jurisdiction("india", base_dir=temp_workspace)
+    assert "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file." in str(exc_info.value)
+
+
+def test_missing_research_dir_raises_error(temp_workspace: Path):
+    """Missing research/india directory raises FileNotFoundError with reinstall guidance."""
+    shutil.rmtree(temp_workspace / "research" / "india")
+    with pytest.raises(FileNotFoundError) as exc_info:
+        validate_jurisdiction("india", base_dir=temp_workspace)
+    assert "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file." in str(exc_info.value)
+
+
+def test_skill_md_contract_and_clean_text():
+    """Assert SKILL.md contains required key phrases and no emoji or tick symbols."""
+    skill_file = WORKSPACE_ROOT / "SKILL.md"
+    content = skill_file.read_text(encoding="utf-8")
+
+    # Short key phrases
+    for phrase in [
+        "stand-in",
+        "model reading, not scanner output",
+        "not evaluated",
+        "SKILL.md",
+        "scripts",
+        "references",
+        "config",
+        "research/india",
+    ]:
+        assert phrase in content, f"Missing key phrase: '{phrase}'"
+
+    # No emoji or tick characters
+    assert "✓" not in content, "SKILL.md must not contain tick symbol '✓'"
+    assert "✔" not in content, "SKILL.md must not contain tick symbol '✔'"
+    assert "✗" not in content, "SKILL.md must not contain cross symbol '✗'"
+    assert "✘" not in content, "SKILL.md must not contain cross symbol '✘'"
+    assert not re.search(r"[\U0001F300-\U0001FAFF\U00002700-\U000027BF]", content), "SKILL.md must not contain emoji characters"

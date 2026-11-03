@@ -67,7 +67,10 @@ class ValidationResult:
 def load_yaml_file(path: Path) -> Any:
     """Load and parse a YAML file."""
     if not path.is_file():
-        raise FileNotFoundError(f"Missing required file: {path}")
+        raise FileNotFoundError(
+            f"Missing required file: {path}. "
+            "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file."
+        )
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
@@ -98,7 +101,10 @@ def load_verification_log(log_path: Path) -> Dict[str, Dict[str, str]]:
     Returns mapping from check_id to metadata dict {'verified_by': ..., 'row_id': ...}.
     """
     if not log_path.is_file():
-        raise FileNotFoundError(f"Missing required verification log: {log_path}")
+        raise FileNotFoundError(
+            f"Missing required verification log: {log_path}. "
+            "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file."
+        )
 
     log_entries: Dict[str, Dict[str, str]] = {}
     with log_path.open("r", encoding="utf-8") as f:
@@ -131,7 +137,10 @@ def load_verification_log(log_path: Path) -> Dict[str, Dict[str, str]]:
 def load_open_questions(oq_path: Path) -> Set[str]:
     """Parse research/<jurisdiction>/open-questions.md for '## Q<n>.' headings."""
     if not oq_path.is_file():
-        raise FileNotFoundError(f"Missing required open-questions file: {oq_path}")
+        raise FileNotFoundError(
+            f"Missing required open-questions file: {oq_path}. "
+            "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file."
+        )
 
     q_ids: Set[str] = set()
     with oq_path.open("r", encoding="utf-8") as f:
@@ -145,7 +154,10 @@ def load_open_questions(oq_path: Path) -> Set[str]:
 def extract_fenced_yaml_checks(markdown_path: Path) -> List[Dict[str, Any]]:
     """Extract all fenced yaml blocks in markdown_path that contain an 'id:' field."""
     if not markdown_path.is_file():
-        raise FileNotFoundError(f"Missing required jurisdiction file: {markdown_path}")
+        raise FileNotFoundError(
+            f"Missing required jurisdiction file: {markdown_path}. "
+            "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file."
+        )
 
     with markdown_path.open("r", encoding="utf-8") as f:
         content = f.read()
@@ -479,10 +491,17 @@ def validate_jurisdiction(
     if today is None:
         today = datetime.date.today()
 
+    research_dir = base_path / "research" / jurisdiction
+    if not research_dir.is_dir():
+        raise FileNotFoundError(
+            f"Missing required research directory: {research_dir}. "
+            "Reinstall the skill with all its folders (scripts, references, config, research); do not create this file."
+        )
+
     markdown_path = base_path / "references" / "jurisdictions" / f"{jurisdiction}.md"
     config_path = base_path / "config" / "effective-dates.yaml"
-    verification_log_path = base_path / "research" / jurisdiction / "verification-log.md"
-    open_questions_path = base_path / "research" / jurisdiction / "open-questions.md"
+    verification_log_path = research_dir / "verification-log.md"
+    open_questions_path = research_dir / "open-questions.md"
 
     effective_dates = load_yaml_file(config_path)
     verification_log = load_verification_log(verification_log_path)

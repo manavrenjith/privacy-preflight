@@ -226,7 +226,9 @@ def run_preflight(
         report_argv = ["--findings", str(destination), "--jurisdiction", "india"]
         if today:
             report_argv.extend(["--today", today])
-        report_main(report_argv)
+        rep_code = report_main(report_argv)
+        if rep_code != 0:
+            exit_code = rep_code
 
     return exit_code, doc
 
@@ -259,14 +261,18 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     args = parser.parse_args(argv)
 
-    exit_code, _ = run_preflight(
-        app_dir=args.app_directory,
-        url=args.url,
-        out_path=args.out,
-        report=args.report,
-        today=args.today,
-    )
-    return exit_code
+    try:
+        exit_code, _ = run_preflight(
+            app_dir=args.app_directory,
+            url=args.url,
+            out_path=args.out,
+            report=args.report,
+            today=args.today,
+        )
+        return exit_code
+    except FileNotFoundError as e:
+        print(f"File Error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

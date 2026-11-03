@@ -18,19 +18,30 @@ Evaluates web applications against statutory privacy requirements and engineerin
 - **Jurisdiction scope:** Only India is currently covered.
 - **Unauthorized scanning:** Never scan sites, ports, or code without explicit user permission and ownership.
 
-## 2. Safety Precautions
+## 2. Required Installation Bundle
+The skill requires all of the following components present together in the skill directory:
+- `SKILL.md` (workflow and presentation rules)
+- `scripts` (scanners, runner, report generator, validator)
+- `references` (check specifications and schemas)
+- `config` (effective dates and restricted countries)
+- `research/india` (statutory analysis, verification log, open questions)
+
+The scripts specifically require `verification-log.md` and `open-questions.md` inside `research/india` to validate checks and generate reports. Always copy the whole `research/india` folder together with the other folders. If any required file or folder is missing, stop and notify the user; never create stand-in files for research, verification or open-question documents. Reinstall the skill with all its folders (scripts, references, config, research); do not create this file.
+
+## 3. Safety Precautions
 - **Never start the user's application:** The user must start and host their own site.
 - **Never install app dependencies:** Do not run `npm install`, `pip install -r`, or application build steps. If Playwright is missing, show the user the two commands from preflight's output (`pip install playwright` and `playwright install chromium`) and let them run them.
 - **Verify serving port:** Always ask or confirm the port actually serving the running site before crawling.
 - **Target authorization:** Only scan repositories and running sites the user owns or is explicitly authorized to test.
 - **Code integrity:** Never modify the user's codebase unless explicitly instructed.
+- **Missing Required Files:** If any required file is missing, stop and tell the user; never create stand-in files for research, verification or open-question documents.
 
-## 3. Step 1: Jurisdiction Check
+## 4. Step 1: Jurisdiction Check
 1. Ask the user which countries their users reside in.
 2. If the user base is outside India, state that only India is currently covered and stop.
 3. If India applies, load only `references/jurisdictions/india.md` for check specifications.
 
-## 4. Step 2: Run Preflight Scanner
+## 5. Step 2: Run Preflight Scanner
 
 Run `scripts/preflight.py` pointing to the application directory:
 
@@ -41,6 +52,7 @@ Example:
 ```bash
 python scripts/preflight.py ./my-app --url http://127.0.0.1:8000 --report
 ```
+Usage lines are reference only; commands given to the user use concrete paths.
 
 - `app_directory`: Local codebase path (required).
 - `--url`: URL of the locally running application (e.g. `http://127.0.0.1:8000`). Only supply `--url` if the site is already running and owned by the user.
@@ -56,13 +68,13 @@ python scripts/preflight.py ./my-app --url http://127.0.0.1:8000 --report
 - If Playwright or Chromium is missing, `preflight.py` prints install instructions (`pip install playwright` and `playwright install chromium`) and continues without crawl/pages checks.
 - If the crawl fails, `preflight.py` prints `crawl failed: <type>; crawl and pages checks not run`, exits with code 1, still writes static findings to the JSON destination, and lists the 9 crawl/pages checks under Not Run. Report this error directly to the user; do not retry blindly.
 
-## 5. Step 3: Assisted Checks Review (IN-DPDP-011, IN-DPDP-013)
+## 6. Step 3: Assisted Checks Review (IN-DPDP-011, IN-DPDP-013)
 For checks labeled with `detection_type: assisted`, automated tools cannot determine statutory sufficiency:
 - **IN-DPDP-011 (Age Signal):** Inspect signup/onboarding code for age verification signals or parental consent branches. Report observations.
 - **IN-DPDP-013 (Reasonable Safeguards):** Inspect storage rules, backup scripts, logging configs, and auth code. For `.env*` files, rely on the scanner's key names and line numbers; do not open them unless the user asks; never repeat a value. Report observations.
 - **Strict Rule:** Never output `met` or `not-met` for assisted checks. Their scanner result is always `needs-human` when files were scanned, or `unclear` if none were found.
 
-## 6. Step 4: Generate and Present Findings Report
+## 7. Step 4: Generate and Present Findings Report
 
 Generate reports using `scripts/report.py`:
 
@@ -73,6 +85,7 @@ Example:
 ```bash
 python scripts/report.py --findings reports/findings.json --out reports/report.md
 ```
+Usage lines are reference only; commands given to the user use concrete paths.
 
 - `--findings`: Path to input findings JSON (required).
 - `--out`: Markdown output file path; prints to stdout if omitted.
@@ -86,14 +99,21 @@ python scripts/report.py --findings reports/findings.json --out reports/report.m
 4. **Informational Inventory:** IN-BP-004 inventory and non-BEST PRACTICE informational findings, listed for information; no legal status assigned.
 5. **Best Practice:** Findings with label `BEST PRACTICE` (met, not-met, or informational).
 6. **Needs Human / Legal Judgment:** Findings with result `needs-human` or `unclear` across all checks.
-7. **Not Run:** Active checks that had no findings supplied in the evaluation.
+7. **Not Run:** Active checks that had no findings supplied in the evaluation. In the chat answer, label these checks "not evaluated" while keeping the report section heading "Not Run".
 8. **Proposed Checks (Not Active):** Checks drafted as proposed and not active in the v0.1 evaluation.
 9. **Not Verified:** Active LAW checks whose `verified_against` is not `official-text`.
 10. **Human Check Pending:** Active LAW checks read by an AI model (`verified_by: ai-read`) with human spot-checks pending.
 11. **Not Covered by This Scan:** Excluded regimes (other jurisdictions, sector rules, e-commerce, intermediary) and unrun check IDs.
 12. **Limits of the Legal Research:** Legal research methodology limits, date variance notes, and pointer to full pack limits.
 
-## 7. Rules
+## 8. Rules
+- **Report Section and Label Alignment:** The final chat answer must strictly follow the report's sections and labels (LAW / BEST PRACTICE, status, verified_by). Do not invent custom groupings or summary themes.
+- **No Banned Formatting Symbols or Urgency Headings:** Never use emoji, tick or cross symbols, or severity or urgency headings (such as Critical, High Urgency, or Immediate Action Required).
+- **Statutory Requirements and Deadlines:** Never state a legal requirement, statutory minimum, penalty, or deadline in your own words, only what the pack says with its caveats.
+- **Model Readings vs Scanner Output:** Anything stated from reading code outside scanner output is labelled "model reading, not scanner output".
+- **Checks Not Run:** Checks that did not run are labelled "not evaluated" in the chat answer (the report section heading remains "Not Run").
+- **Commands:** Commands given to the user must use concrete paths, no angle-bracket placeholders.
+- **Missing Files:** If a required file is missing, stop and tell the user; never create stand-in files for research, verification or open-question documents.
 - **Classification:** Every finding must be labeled `LAW` or `BEST PRACTICE`.
 - **Status & Metadata:** Display check status, `verified_by`, and `last_verified` date from the pack.
 - **No Overall Score:** Never produce a composite score, grade, percentage, or pass/fail summary total.
@@ -105,7 +125,7 @@ python scripts/report.py --findings reports/findings.json --out reports/report.m
 - **Legal Referral:** Hand legal questions and exemption interpretations to a qualified lawyer.
 - **AI-Read Status:** Clarify that LAW checks were read by an AI model; note that five specific passages were read by an independent non-lawyer with reported matches, while pack-wording comparison was not confirmed and review by legal counsel remains pending.
 
-## 8. Limits
+## 9. Limits
 - **Web Stacks Only:** Code checks (age signal, baseline) cover web stacks only.
 - **Keyword Presence != Adequacy:** Scanners verify keyword presence on short lines; wording adequacy is never judged.
 - **Unauthenticated Scope:** Crawlers cannot access pages behind authentication or login walls.

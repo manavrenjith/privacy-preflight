@@ -29,6 +29,7 @@ Not yet reviewed by legal counsel.
   - `yaml` (`PyYAML`): Used by `scripts/report.py` and `scripts/validate_checks.py` for parsing check definitions and jurisdiction configs.
   - `playwright` (`playwright.sync_api`): Used by `scripts/preflight.py` and `scripts/crawl.py` for dynamic page crawling (requires `playwright install chromium`).
 - **Dependency Files:** No `requirements.txt` or `pyproject.toml` file exists in the repository. Dependencies can be installed directly with `pip install pyyaml playwright && playwright install chromium`.
+- **Install as a skill:** copy SKILL.md, scripts, references, config and research together into the skill folder. The scripts need research/india/verification-log.md and research/india/open-questions.md; if they are missing the scripts stop with an error telling you to reinstall. Do not create stand-in files.
 
 ## Usage
 
